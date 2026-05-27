@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace ParalivesMultiplayer.Session
 {
@@ -9,24 +10,32 @@ namespace ParalivesMultiplayer.Session
         public static bool IsHost { get; private set; }
         public static bool IsClient => IsActive && !IsHost;
 
+        public static int LocalPlayerId { get; private set; }
+
         public static uint Tick { get; private set; }
 
         static readonly Dictionary<int, string> _players = new Dictionary<int, string>();
         static readonly object _playersLock = new object();
+        static int _nextLocalPlayerId = 1;
 
         public static event Action OnSessionStarted;
         public static event Action OnSessionEnded;
         public static event Action<int, string> PlayerJoined;
         public static event Action<int> PlayerLeft;
 
-        public static void StartAsHost()
+       public static void StartAsHost()
         {
             IsActive = true;
             IsHost = true;
+            LocalPlayerId = 0;
             Tick = 0;
             _players.Clear();
+            lock (_playersLock)
+            {
+                _players[0] = "Host";
+            }
 
-            Plugin.Log.LogInfo("[Session] Started as HOST");
+            Plugin.Log.LogInfo("[Session] Started as HOST (LocalPlayerId=0)");
             OnSessionStarted?.Invoke();
         }
 
@@ -34,18 +43,20 @@ namespace ParalivesMultiplayer.Session
         {
             IsActive = true;
             IsHost = false;
+            LocalPlayerId = Interlocked.Increment(ref _nextLocalPlayerId);
             Tick = 0;
             _players.Clear();
 
-            Plugin.Log.LogInfo("[Session] Started as CLIENT");
+            Plugin.Log.LogInfo($"[Session] Started as CLIENT (LocalPlayerId={LocalPlayerId})");
             OnSessionStarted?.Invoke();
         }
 
-        public static void End()
+       public static void End()
         {
             if (!IsActive) return;
             IsActive = false;
             IsHost = false;
+            LocalPlayerId = -1;
             Tick = 0;
             lock (_playersLock) _players.Clear();
 
@@ -58,10 +69,15 @@ namespace ParalivesMultiplayer.Session
             Tick++;
         }
 
-        public static void OnClientConnected(int clientId, string clientName)
+       public static void OnClientConnected(int clientId, string clientName)
         {
             if (!IsActive) return;
+            lock (_playersLock)
+            {
+                _players[clientId] = clientName;
+            }
             Plugin.Log.LogInfo($"[Session] Client connected: {clientName} (id={clientId})");
+            PlayerJoined?.Invoke(clientId, clientName);
         }
 
         public static void OnPlayerJoined(int playerId, string playerName)

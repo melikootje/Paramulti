@@ -58,6 +58,7 @@ namespace ParalivesMultiplayer.Networking.Messages
         public UnityEngine.Vector3 Position;
         public UnityEngine.Quaternion Rotation;
         public UnityEngine.Vector3 Scale;
+        public int OwnerPlayerId;
 
         public void Encode(BinaryWriter output)
         {
@@ -66,6 +67,7 @@ namespace ParalivesMultiplayer.Networking.Messages
             output.Write(Position);
             output.Write(Rotation);
             output.Write(Scale);
+            output.Write(OwnerPlayerId);
         }
 
         public bool TryDecode(BinaryReader input)
@@ -77,6 +79,7 @@ namespace ParalivesMultiplayer.Networking.Messages
                 Position = input.ReadVector3();
                 Rotation = input.ReadQuaternion();
                 Scale = input.ReadVector3();
+                OwnerPlayerId = input.ReadInt32();
                 return true;
             }
             catch

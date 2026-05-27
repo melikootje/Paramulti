@@ -34,7 +34,7 @@ namespace ParalivesMultiplayer.Performance
         {
             msg = new MsgHeartbeat
             {
-                PlayerId = 0,
+                PlayerId = MultiplayerSession.LocalPlayerId,
                 Tick = MultiplayerSession.Tick,
                 SequenceNumber = AllocateSequence(),
                 TimestampMs = _sw.ElapsedMilliseconds

@@ -142,7 +142,7 @@ namespace ParalivesMultiplayer.Session
                         Position = entry.Position,
                         Rotation = entry.Rotation,
                         Scale = entry.Scale,
-                        OwnerPlayerId = 0,
+                        OwnerPlayerId = entry.OwnerPlayerId,
                         SpawnTick = snapshot.Tick
                     };
                 }
@@ -167,7 +167,8 @@ namespace ParalivesMultiplayer.Session
                         EntityType = kv.Value.EntityType,
                         Position = kv.Value.Position,
                         Rotation = kv.Value.Rotation,
-                        Scale = kv.Value.Scale
+                        Scale = kv.Value.Scale,
+                        OwnerPlayerId = kv.Value.OwnerPlayerId
                     });
                 }
             }

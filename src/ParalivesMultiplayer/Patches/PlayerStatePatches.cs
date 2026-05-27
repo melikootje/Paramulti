@@ -109,7 +109,7 @@ namespace ParalivesMultiplayer.Patches
                     var msg = new Networking.Messages.MsgUpdateState
                     {
                         Tick = MultiplayerSession.Tick,
-                        PlayerId = 0,
+                        PlayerId = MultiplayerSession.LocalPlayerId,
                         Position = pos,
                         Rotation = rot
                     };

@@ -203,7 +203,7 @@ namespace ParalivesMultiplayer.Patches
         }
 
         [HarmonyPriority(int.MaxValue)]
-        static void BuildActionPostfix(object __Instance)
+        static void BuildActionPostfix(object __Instance, object[] __args = null)
         {
             if (!MultiplayerSession.IsActive || !_enabled) return;
 
@@ -212,18 +212,20 @@ namespace ParalivesMultiplayer.Patches
                 var net = TcpNetworkManager.Instance;
                 if (net == null) return;
 
+                var extracted = ExtractObjectData(__Instance, __args);
                 uint seqId = (uint)System.Threading.Interlocked.Increment(ref _buildSequence);
+
                 var evtMsg = new MsgBuildModeEvent
                 {
-                    PlayerId = 0,
+                    PlayerId = MultiplayerSession.LocalPlayerId,
                     Tick = MultiplayerSession.Tick,
                     EventType = BuildEventType.ObjectPlaced,
                     EntityId = seqId,
-                    ObjectTypeId = "unknown",
-                    Position = Vector3.zero,
-                    Rotation = Quaternion.identity,
-                    Scale = Vector3.one,
-                    StyleName = ""
+                    ObjectTypeId = extracted.TypeId,
+                    Position = extracted.Position,
+                    Rotation = extracted.Rotation,
+                    Scale = extracted.Scale,
+                    StyleName = extracted.StyleName
                 };
 
                 if (BuildSyncManager.Enabled)
@@ -240,12 +242,130 @@ namespace ParalivesMultiplayer.Patches
                     net.SendToHost(evtMsg);
                 }
 
-                PatchLogger.LogDebug($"Build action observed, sent event seq={seqId}");
+                EntitySyncManager.RegisterSpawn(seqId, extracted.TypeId, extracted.Position, extracted.Rotation, extracted.Scale, MultiplayerSession.LocalPlayerId);
+                PatchLogger.LogDebug($"Build action: type={extracted.TypeId}, pos={extracted.Position}, seq={seqId}");
             }
             catch (Exception ex)
             {
                 PatchLogger.LogError($"BuildActionPostfix error: {ex.Message}");
             }
+        }
+
+        static ExtractedObjectData ExtractObjectData(object instance, object[] args)
+        {
+            var result = new ExtractedObjectData
+            {
+                TypeId = "unknown",
+                Position = Vector3.zero,
+                Rotation = Quaternion.identity,
+                Scale = Vector3.one,
+                StyleName = ""
+            };
+
+            if (instance == null) return result;
+
+            GameObject targetGo = null;
+            Component targetComp = null;
+
+            if (instance is GameObject go)
+            {
+                targetGo = go;
+            }
+            else if (instance is Component comp)
+            {
+                targetComp = comp;
+                targetGo = comp.gameObject;
+            }
+            else
+            {
+                Type instType = instance.GetType();
+
+                var goProp = instType.GetProperty("gameObject");
+                if (goProp != null) targetGo = goProp.GetValue(instance, null) as GameObject;
+
+                if (targetGo == null)
+                {
+                    var transformProp = instType.GetProperty("Transform") ?? instType.GetProperty("transform");
+                    if (transformProp != null)
+                    {
+                        var tr = transformProp.GetValue(instance, null);
+                        if (tr is Transform t)
+                        {
+                            result.Position = (Vector3)t.position;
+                            result.Rotation = (Quaternion)t.rotation;
+                            result.Scale = (Vector3)t.localScale;
+                        }
+                    }
+
+                    var nameProp = instType.GetProperty("Name") ?? instType.GetProperty("name");
+                    if (nameProp != null) result.TypeId = nameProp.GetValue(instance, null)?.ToString() ?? "unknown";
+
+                    var posProp = instType.GetProperty("Position") ?? instType.GetProperty("position");
+                    if (posProp != null && result.Position == Vector3.zero)
+                        result.Position = (Vector3)(posProp.GetValue(instance, null) ?? Vector3.zero);
+
+                    var rotProp = instType.GetProperty("Rotation") ?? instType.GetProperty("rotation");
+                    if (rotProp != null && result.Rotation == Quaternion.identity)
+                        result.Rotation = (Quaternion)(rotProp.GetValue(instance, null) ?? Quaternion.identity);
+
+                    var scaleProp = instType.GetProperty("Scale") ?? instType.GetProperty("scale");
+                    if (scaleProp != null && result.Scale == Vector3.one)
+                        result.Scale = (Vector3)(scaleProp.GetValue(instance, null) ?? Vector3.one);
+
+                    var styleProp = instType.GetProperty("StyleName") ?? instType.GetProperty("styleName") ?? instType.GetProperty("Style");
+                    if (styleProp != null) result.StyleName = styleProp.GetValue(instance, null)?.ToString() ?? "";
+                }
+            }
+
+            if (targetGo != null)
+            {
+                result.TypeId = targetGo.name;
+                result.Position = targetGo.transform.position;
+                result.Rotation = targetGo.transform.rotation;
+                result.Scale = targetGo.transform.localScale;
+            }
+            else if (targetComp != null && targetComp.gameObject != null)
+            {
+                result.TypeId = targetComp.gameObject.name;
+                result.Position = targetComp.transform.position;
+                result.Rotation = targetComp.transform.rotation;
+                result.Scale = targetComp.transform.localScale;
+            }
+
+            if (args != null)
+            {
+                foreach (var arg in args)
+                {
+                    if (arg is GameObject argGo && (targetGo == null || result.TypeId == "unknown"))
+                    {
+                        result.TypeId = argGo.name;
+                        result.Position = argGo.transform.position;
+                        result.Rotation = argGo.transform.rotation;
+                        result.Scale = argGo.transform.localScale;
+                    }
+                    else if (arg is Component argComp && argComp.gameObject != null)
+                    {
+                        if (result.Position == Vector3.zero || result.TypeId == "unknown")
+                        {
+                            result.TypeId = argComp.gameObject.name;
+                            result.Position = argComp.transform.position;
+                            result.Rotation = argComp.transform.rotation;
+                            result.Scale = argComp.transform.localScale;
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        struct ExtractedObjectData
+        {
+            public string TypeId;
+            public Vector3 Position;
+            public Quaternion Rotation;
+            public Vector3 Scale;
+            public string StyleName;
         }
 
         [HarmonyPriority(int.MaxValue)]
@@ -261,7 +381,7 @@ namespace ParalivesMultiplayer.Patches
                 _inBuildMode = !_inBuildMode;
                 var evtMsg = new MsgBuildModeEvent
                 {
-                    PlayerId = 0,
+                    PlayerId = MultiplayerSession.LocalPlayerId,
                     Tick = MultiplayerSession.Tick,
                     EventType = _inBuildMode ? BuildEventType.ModeEntered : BuildEventType.ModeExited,
                     EntityId = 0,
@@ -319,7 +439,7 @@ namespace ParalivesMultiplayer.Patches
 
                 var evtMsg = new MsgBuildModeEvent
                 {
-                    PlayerId = 0,
+                    PlayerId = MultiplayerSession.LocalPlayerId,
                     Tick = MultiplayerSession.Tick,
                     EventType = BuildEventType.ObjectPlaced,
                     EntityId = seqId,
@@ -335,7 +455,7 @@ namespace ParalivesMultiplayer.Patches
                     BuildSyncManager.ValidateAndApply(evtMsg);
                 }
 
-                EntitySyncManager.RegisterSpawn(seqId, go.name, pos, rot, scale, 0);
+                EntitySyncManager.RegisterSpawn(seqId, go.name, pos, rot, scale, MultiplayerSession.LocalPlayerId);
                 PatchLogger.LogDebug($"Object placed: {go.name} at {pos}");
             }
             catch (Exception ex)
@@ -351,7 +471,47 @@ namespace ParalivesMultiplayer.Patches
 
             try
             {
-                PatchLogger.LogDebug("Object destroyed observed");
+                GameObject go = null;
+                string objName = "unknown";
+                uint entityId = 0;
+
+                if (__Instance is GameObject instGo)
+                {
+                    go = instGo;
+                    objName = go.name;
+                }
+                else if (__Instance is Component instComp && instComp.gameObject != null)
+                {
+                    go = instComp.gameObject;
+                    objName = go.name;
+                }
+
+                var net = TcpNetworkManager.Instance;
+                if (net != null)
+                {
+                    uint seqId = (uint)System.Threading.Interlocked.Increment(ref _buildSequence);
+                    var evtMsg = new MsgBuildModeEvent
+                    {
+                        PlayerId = MultiplayerSession.LocalPlayerId,
+                        Tick = MultiplayerSession.Tick,
+                        EventType = BuildEventType.ObjectRemoved,
+                        EntityId = seqId,
+                        ObjectTypeId = objName,
+                        Position = go != null ? go.transform.position : Vector3.zero,
+                        Rotation = Quaternion.identity,
+                        Scale = Vector3.one,
+                        StyleName = ""
+                    };
+
+                    if (MultiplayerSession.IsHost)
+                        net.SendToAllClients(evtMsg);
+                    else
+                        net.SendToHost(evtMsg);
+
+                    EntitySyncManager.RegisterDespawn(seqId, MultiplayerSession.LocalPlayerId);
+                }
+
+                PatchLogger.LogDebug($"Object destroyed: {objName}");
             }
             catch (Exception ex)
             {
@@ -370,14 +530,50 @@ namespace ParalivesMultiplayer.Patches
 
             try
             {
-                var go = __Instance as GameObject;
+                GameObject go = null;
+                string objName = "unknown";
+
+                if (__Instance is GameObject instGo)
+                {
+                    go = instGo;
+                    objName = go.name;
+                }
+                else if (__Instance is Component instComp && instComp.gameObject != null)
+                {
+                    go = instComp.gameObject;
+                    objName = go.name;
+                }
+
                 if (go == null) return;
 
                 var pos = go.transform.position;
                 var rot = go.transform.rotation;
                 var scale = go.transform.localScale;
 
-                PatchLogger.LogDebug($"Object transform changed: {go.name} pos={pos}");
+                var net = TcpNetworkManager.Instance;
+                if (net != null)
+                {
+                    uint seqId = (uint)System.Threading.Interlocked.Increment(ref _buildSequence);
+                    var evtMsg = new MsgBuildModeEvent
+                    {
+                        PlayerId = MultiplayerSession.LocalPlayerId,
+                        Tick = MultiplayerSession.Tick,
+                        EventType = BuildEventType.ObjectMoved,
+                        EntityId = seqId,
+                        ObjectTypeId = objName,
+                        Position = pos,
+                        Rotation = rot,
+                        Scale = scale,
+                        StyleName = ""
+                    };
+
+                    if (MultiplayerSession.IsHost)
+                        net.SendToAllClients(evtMsg);
+                    else
+                        net.SendToHost(evtMsg);
+                }
+
+                PatchLogger.LogDebug($"Object transform changed: {objName} pos={pos}, sent network event");
             }
             catch (Exception ex)
             {
@@ -386,13 +582,40 @@ namespace ParalivesMultiplayer.Patches
         }
 
         [HarmonyPriority(int.MaxValue)]
-        static void PlacementPostfix(object __Instance)
+        static void PlacementPostfix(object __Instance, object[] __args = null)
         {
             if (!MultiplayerSession.IsActive || !_enabled) return;
 
             try
             {
-                PatchLogger.LogDebug("Placement system action observed");
+                var extracted = ExtractObjectData(__Instance, __args);
+                uint seqId = (uint)System.Threading.Interlocked.Increment(ref _buildSequence);
+
+                var net = TcpNetworkManager.Instance;
+                if (net != null)
+                {
+                    var evtMsg = new MsgBuildModeEvent
+                    {
+                        PlayerId = MultiplayerSession.LocalPlayerId,
+                        Tick = MultiplayerSession.Tick,
+                        EventType = BuildEventType.ObjectPlaced,
+                        EntityId = seqId,
+                        ObjectTypeId = extracted.TypeId,
+                        Position = extracted.Position,
+                        Rotation = extracted.Rotation,
+                        Scale = extracted.Scale,
+                        StyleName = extracted.StyleName
+                    };
+
+                    if (MultiplayerSession.IsHost)
+                        net.SendToAllClients(evtMsg);
+                    else
+                        net.SendToHost(evtMsg);
+
+                    EntitySyncManager.RegisterSpawn(seqId, extracted.TypeId, extracted.Position, extracted.Rotation, extracted.Scale, MultiplayerSession.LocalPlayerId);
+                }
+
+                PatchLogger.LogDebug($"Placement action: type={extracted.TypeId}, pos={extracted.Position}");
             }
             catch (Exception ex)
             {
