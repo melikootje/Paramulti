@@ -28,8 +28,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="Stubs\Unity.Stubs.cs" />
     <Compile Include="Tests\MessageSerializationTests.cs" />
+    <Compile Include="Tests/PacketStatsTests.cs" />
+    <Compile Include="Tests/BandwidthLimiterTests.cs" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
