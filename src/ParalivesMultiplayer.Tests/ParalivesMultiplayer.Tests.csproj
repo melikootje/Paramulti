@@ -55,8 +55,13 @@
     <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgPong.cs" Link="Messages\MsgPong.cs" />
     <Compile Include="..\ParalivesMultiplayer\Networking\BinarySerializationEx.cs" Link="BinarySerializationEx.cs" />
     <Compile Include="..\ParalivesMultiplayer\Performance\BandwidthLimiter.cs" Link="BandwidthLimiter.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\MainThreadQueue.cs" Link="MainThreadQueue.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\PacketStats.cs" Link="PacketStats.cs" />
     <Compile Include="Tests\MessageSerializationTests.cs" />
     <Compile Include="Tests\BandwidthLimiterTests.cs" />
+    <Compile Include="Tests\MainThreadQueueTests.cs" />
+    <Compile Include="Tests\PacketStatsTests.cs" />
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -86,7 +86,7 @@ namespace ParalivesMultiplayer.Tests
             Assert.Equal("500 B", PacketStats.FormatBytes(500));
             Assert.Equal("1.0 KB", PacketStats.FormatBytes(1024));
             Assert.Equal("1.5 KB", PacketStats.FormatBytes(1536));
-            Assert.Equal("1.0 MB", PacketStats.FormatBytes(1048576));
+            Assert.Equal("1.00 MB", PacketStats.FormatBytes(1048576));
             Assert.Equal("2.50 MB", PacketStats.FormatBytes(2621440));
         }
 

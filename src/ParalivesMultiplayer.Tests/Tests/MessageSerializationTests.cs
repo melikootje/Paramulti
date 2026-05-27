@@ -9,6 +9,10 @@ namespace ParalivesMultiplayer.Tests
 {
     public class MessageSerializationTests
     {
+        static MessageSerializationTests()
+        {
+            MessageRegistry.RegisterAll();
+        }
         byte[] EncodeMessage(MessageBase msg)
         {
             using var ms = new MemoryStream();

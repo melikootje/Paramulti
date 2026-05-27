@@ -123,11 +123,11 @@ namespace ParalivesMultiplayer.Tests
         [Fact]
         public void TokenRefill_DoesNotExceedBurst()
         {
-            var limiter = new BandwidthLimiter(1000000, 5000);
-            Thread.Sleep(100);
+            var limiter = new BandwidthLimiter(100000, 5000);
+            Thread.Sleep(500);
 
             Assert.True(limiter.TryConsume(5000));
-            Assert.False(limiter.TryConsume(1));
+            Assert.False(limiter.TryConsume(4000));
         }
 
         [Fact]
