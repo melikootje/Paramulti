@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using ParalivesMultiplayer.Networking;
 using ParalivesMultiplayer.Networking.Messages;
 using UnityEngine;
 
@@ -62,9 +63,9 @@ namespace ParalivesMultiplayer.Session
                 Tick = MultiplayerSession.Tick,
                 EntityId = entityId,
                 EntityType = entityType,
-                Position = position,
-                Rotation = rotation,
-                Scale = scale
+                Position = position.FromUnity(),
+                Rotation = rotation.FromUnity(),
+                Scale = scale.FromUnity()
             };
 
             Plugin.Log.LogInfo($"[EntitySync] Spawn: id={entityId}, type={entityType}, pos={position}");
@@ -107,9 +108,9 @@ namespace ParalivesMultiplayer.Session
                 {
                     EntityId = msg.EntityId,
                     EntityType = msg.EntityType,
-                    Position = msg.Position,
-                    Rotation = msg.Rotation,
-                    Scale = msg.Scale,
+                    Position = msg.Position.ToUnity(),
+                    Rotation = msg.Rotation.ToUnity(),
+                    Scale = msg.Scale.ToUnity(),
                     OwnerPlayerId = msg.PlayerId,
                     SpawnTick = msg.Tick
                 };
@@ -139,9 +140,9 @@ namespace ParalivesMultiplayer.Session
                     {
                         EntityId = entry.EntityId,
                         EntityType = entry.EntityType,
-                        Position = entry.Position,
-                        Rotation = entry.Rotation,
-                        Scale = entry.Scale,
+                        Position = entry.Position.ToUnity(),
+                        Rotation = entry.Rotation.ToUnity(),
+                        Scale = entry.Scale.ToUnity(),
                         OwnerPlayerId = entry.OwnerPlayerId,
                         SpawnTick = snapshot.Tick
                     };
@@ -165,9 +166,9 @@ namespace ParalivesMultiplayer.Session
                     {
                         EntityId = kv.Value.EntityId,
                         EntityType = kv.Value.EntityType,
-                        Position = kv.Value.Position,
-                        Rotation = kv.Value.Rotation,
-                        Scale = kv.Value.Scale,
+                        Position = kv.Value.Position.FromUnity(),
+                        Rotation = kv.Value.Rotation.FromUnity(),
+                        Scale = kv.Value.Scale.FromUnity(),
                         OwnerPlayerId = kv.Value.OwnerPlayerId
                     });
                 }

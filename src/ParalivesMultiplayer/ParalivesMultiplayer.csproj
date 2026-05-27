@@ -15,6 +15,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ParalivesMultiplayer.Protocol\ParalivesMultiplayer.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="UnityEngine">
       <HintPath>references/UnityEngine.dll</HintPath>
       <Private>false</Private>

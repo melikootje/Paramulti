@@ -116,6 +116,7 @@ namespace ParalivesMultiplayer
             _cfgMaxMessagesPerSecond = Config.Bind("Security", "MaxMessagesPerSecond", 100,
                 "Maximum messages per second allowed per client.");
 
+            MessageRegistry.LogAction = msg => Log.LogInfo(msg);
             MessageRegistry.RegisterAll();
             DesyncDetector.Initialize();
             InputRouter.Initialize();

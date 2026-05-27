@@ -24,43 +24,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ParalivesMultiplayer.Protocol\ParalivesMultiplayer.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="Stubs\Unity.Stubs.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Stubs\BepInEx.Stubs.cs" Link="Stubs\BepInEx.Stubs.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Stubs\BepInEx.Attributes.cs" Link="Stubs\BepInEx.Attributes.cs" />
-    <Compile Include="Stubs\Plugin.Mock.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MessageBase.cs" Link="Messages\MessageBase.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgConnect.cs" Link="Messages\MsgConnect.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgDisconnect.cs" Link="Messages\MsgDisconnect.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgPlayerJoin.cs" Link="Messages\MsgPlayerJoin.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgPlayerLeave.cs" Link="Messages\MsgPlayerLeave.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgSyncState.cs" Link="Messages\MsgSyncState.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgUpdateState.cs" Link="Messages\MsgUpdateState.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgChat.cs" Link="Messages\MsgChat.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgCursorPing.cs" Link="Messages\MsgCursorPing.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgBuildObjectPlaced.cs" Link="Messages\MsgBuildObjectPlaced.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgEntitySpawn.cs" Link="Messages\MsgEntitySpawn.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgEntityDespawn.cs" Link="Messages\MsgEntityDespawn.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgRequestFullState.cs" Link="Messages\MsgRequestFullState.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgFullStateSnapshot.cs" Link="Messages\MsgFullStateSnapshot.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgReadyCheck.cs" Link="Messages\MsgReadyCheck.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgInputCommand.cs" Link="Messages\MsgInputCommand.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgBuildModeEvent.cs" Link="Messages\MsgBuildModeEvent.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgHeartbeat.cs" Link="Messages\MsgHeartbeat.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgSaveProtocol.cs" Link="Messages\MsgSaveProtocol.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgLoadProtocol.cs" Link="Messages\MsgLoadProtocol.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgReconnectRequest.cs" Link="Messages\MsgReconnectRequest.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgReconnectAck.cs" Link="Messages\MsgReconnectAck.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgHostMigration.cs" Link="Messages\MsgHostMigration.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgPing.cs" Link="Messages\MsgPing.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgPong.cs" Link="Messages\MsgPong.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\BinarySerializationEx.cs" Link="BinarySerializationEx.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Performance\BandwidthLimiter.cs" Link="BandwidthLimiter.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\MainThreadQueue.cs" Link="MainThreadQueue.cs" />
-    <Compile Include="..\ParalivesMultiplayer\Networking\PacketStats.cs" Link="PacketStats.cs" />
     <Compile Include="Tests\MessageSerializationTests.cs" />
-    <Compile Include="Tests\BandwidthLimiterTests.cs" />
-    <Compile Include="Tests\MainThreadQueueTests.cs" />
-    <Compile Include="Tests\PacketStatsTests.cs" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

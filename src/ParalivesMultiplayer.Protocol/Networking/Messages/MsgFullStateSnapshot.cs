@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using ParalivesMultiplayer.Networking;
 
 namespace ParalivesMultiplayer.Networking.Messages
 {
@@ -55,9 +56,9 @@ namespace ParalivesMultiplayer.Networking.Messages
     {
         public uint EntityId;
         public string EntityType;
-        public UnityEngine.Vector3 Position;
-        public UnityEngine.Quaternion Rotation;
-        public UnityEngine.Vector3 Scale;
+        public Vector3 Position;
+        public Quaternion Rotation;
+        public Vector3 Scale;
         public int OwnerPlayerId;
 
         public void Encode(BinaryWriter output)

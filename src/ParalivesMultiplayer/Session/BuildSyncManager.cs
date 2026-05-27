@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using ParalivesMultiplayer.Networking;
 using ParalivesMultiplayer.Networking.Messages;
 using UnityEngine;
 
@@ -183,9 +184,9 @@ namespace ParalivesMultiplayer.Session
             {
                 EntityId = id,
                 ObjectTypeId = evt.ObjectTypeId,
-                Position = evt.Position,
-                Rotation = evt.Rotation,
-                Scale = evt.Scale,
+                Position = evt.Position.ToUnity(),
+                Rotation = evt.Rotation.ToUnity(),
+                Scale = evt.Scale.ToUnity(),
                 StyleName = evt.StyleName,
                 OwnerPlayerId = evt.PlayerId,
                 CreatedTick = evt.Tick
@@ -196,9 +197,9 @@ namespace ParalivesMultiplayer.Session
             EntitySyncManager.RegisterSpawn(
                 id,
                 evt.ObjectTypeId,
-                evt.Position,
-                evt.Rotation,
-                evt.Scale,
+                evt.Position.ToUnity(),
+                evt.Rotation.ToUnity(),
+                evt.Scale.ToUnity(),
                 evt.PlayerId);
         }
 
@@ -214,14 +215,14 @@ namespace ParalivesMultiplayer.Session
             {
                 if (_remoteObjects.TryGetValue(evt.EntityId, out var obj))
                 {
-                    obj.Position = evt.Position;
+                    obj.Position = evt.Position.ToUnity();
                     _remoteObjects[evt.EntityId] = obj;
                 }
             }
 
             if (EntitySyncManager.TryGetEntity(evt.EntityId, out var record))
             {
-                record.Position = evt.Position;
+                record.Position = evt.Position.ToUnity();
             }
         }
 
@@ -231,14 +232,14 @@ namespace ParalivesMultiplayer.Session
             {
                 if (_remoteObjects.TryGetValue(evt.EntityId, out var obj))
                 {
-                    obj.Rotation = evt.Rotation;
+                    obj.Rotation = evt.Rotation.ToUnity();
                     _remoteObjects[evt.EntityId] = obj;
                 }
             }
 
             if (EntitySyncManager.TryGetEntity(evt.EntityId, out var record))
             {
-                record.Rotation = evt.Rotation;
+                record.Rotation = evt.Rotation.ToUnity();
             }
         }
 
@@ -248,14 +249,14 @@ namespace ParalivesMultiplayer.Session
             {
                 if (_remoteObjects.TryGetValue(evt.EntityId, out var obj))
                 {
-                    obj.Scale = evt.Scale;
+                    obj.Scale = evt.Scale.ToUnity();
                     _remoteObjects[evt.EntityId] = obj;
                 }
             }
 
             if (EntitySyncManager.TryGetEntity(evt.EntityId, out var record))
             {
-                record.Scale = evt.Scale;
+                record.Scale = evt.Scale.ToUnity();
             }
         }
 

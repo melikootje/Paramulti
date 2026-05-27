@@ -222,9 +222,9 @@ namespace ParalivesMultiplayer.Patches
                     EventType = BuildEventType.ObjectPlaced,
                     EntityId = seqId,
                     ObjectTypeId = extracted.TypeId,
-                    Position = extracted.Position,
-                    Rotation = extracted.Rotation,
-                    Scale = extracted.Scale,
+                    Position = extracted.Position.FromUnity(),
+                    Rotation = extracted.Rotation.FromUnity(),
+                    Scale = extracted.Scale.FromUnity(),
                     StyleName = extracted.StyleName
                 };
 
@@ -444,9 +444,9 @@ namespace ParalivesMultiplayer.Patches
                     EventType = BuildEventType.ObjectPlaced,
                     EntityId = seqId,
                     ObjectTypeId = go.name,
-                    Position = pos,
-                    Rotation = rot,
-                    Scale = scale,
+                    Position = pos.FromUnity(),
+                    Rotation = rot.FromUnity(),
+                    Scale = scale.FromUnity(),
                     StyleName = ""
                 };
 
@@ -497,9 +497,9 @@ namespace ParalivesMultiplayer.Patches
                         EventType = BuildEventType.ObjectRemoved,
                         EntityId = seqId,
                         ObjectTypeId = objName,
-                        Position = go != null ? go.transform.position : Vector3.zero,
-                        Rotation = Quaternion.identity,
-                        Scale = Vector3.one,
+                        Position = (go != null ? go.transform.position : Vector3.zero).FromUnity(),
+                        Rotation = Quaternion.identity.FromUnity(),
+                        Scale = Vector3.one.FromUnity(),
                         StyleName = ""
                     };
 
@@ -561,9 +561,9 @@ namespace ParalivesMultiplayer.Patches
                         EventType = BuildEventType.ObjectMoved,
                         EntityId = seqId,
                         ObjectTypeId = objName,
-                        Position = pos,
-                        Rotation = rot,
-                        Scale = scale,
+                        Position = pos.FromUnity(),
+                        Rotation = rot.FromUnity(),
+                        Scale = scale.FromUnity(),
                         StyleName = ""
                     };
 
@@ -601,9 +601,9 @@ namespace ParalivesMultiplayer.Patches
                         EventType = BuildEventType.ObjectPlaced,
                         EntityId = seqId,
                         ObjectTypeId = extracted.TypeId,
-                        Position = extracted.Position,
-                        Rotation = extracted.Rotation,
-                        Scale = extracted.Scale,
+                        Position = extracted.Position.FromUnity(),
+                        Rotation = extracted.Rotation.FromUnity(),
+                        Scale = extracted.Scale.FromUnity(),
                         StyleName = extracted.StyleName
                     };
 

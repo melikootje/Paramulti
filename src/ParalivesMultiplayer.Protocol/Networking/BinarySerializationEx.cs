@@ -1,23 +1,22 @@
-using System;
-using UnityEngine;
+using System.IO;
 
 namespace ParalivesMultiplayer.Networking
 {
     public static class BinarySerializationEx
     {
-        public static void Write(this System.IO.BinaryWriter writer, Vector3 v)
+        public static void Write(this BinaryWriter writer, Vector3 v)
         {
             writer.Write(v.x);
             writer.Write(v.y);
             writer.Write(v.z);
         }
 
-        public static Vector3 ReadVector3(this System.IO.BinaryReader reader)
+        public static Vector3 ReadVector3(this BinaryReader reader)
         {
             return new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
         }
 
-        public static void Write(this System.IO.BinaryWriter writer, Quaternion q)
+        public static void Write(this BinaryWriter writer, Quaternion q)
         {
             writer.Write(q.x);
             writer.Write(q.y);
@@ -25,7 +24,7 @@ namespace ParalivesMultiplayer.Networking
             writer.Write(q.w);
         }
 
-        public static Quaternion ReadQuaternion(this System.IO.BinaryReader reader)
+        public static Quaternion ReadQuaternion(this BinaryReader reader)
         {
             return new Quaternion(reader.ReadSingle(), reader.ReadSingle(),
                 reader.ReadSingle(), reader.ReadSingle());
