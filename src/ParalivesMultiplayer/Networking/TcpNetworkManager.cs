@@ -1,0 +1,621 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using ParalivesMultiplayer.Input;
+using ParalivesMultiplayer.Networking.Messages;
+using ParalivesMultiplayer.Performance;
+using ParalivesMultiplayer.Session;
+
+namespace ParalivesMultiplayer.Networking
+{
+    public class ClientSession
+    {
+        public readonly int Id;
+        public string ClientName;
+        public bool IsAuthenticated;
+        public TcpClient TcpClient;
+        public readonly ConcurrentQueue<MessageBase> SenderQueue = new ConcurrentQueue<MessageBase>();
+        public readonly AutoResetEvent SendSignal = new AutoResetEvent(false);
+        public readonly CancellationTokenSource DisconnectToken = new CancellationTokenSource();
+
+        public ClientSession(int id)
+        {
+            Id = id;
+        }
+
+        public void Send(MessageBase message, bool signal = true)
+        {
+            if (DisconnectToken.IsCancellationRequested) return;
+            SenderQueue.Enqueue(message);
+            if (signal)
+                SendSignal.Set();
+        }
+    }
+
+    public class TcpNetworkManager : IDisposable
+    {
+        public static TcpNetworkManager Instance { get; private set; }
+
+        const int DefaultPort = 7890;
+        const int SendBufferSize = 1024 * 1024;
+        const int LoopWakeupMs = 500;
+
+        public bool IsRunning => _stopNetwork == null || !_stopNetwork.IsCancellationRequested;
+
+        static readonly BandwidthLimiter BandwidthLimit = new BandwidthLimiter(8 * 1024 * 1024, 16 * 1024 * 1024);
+        public bool IsHost { get; private set; }
+        public bool IsConnected => IsHost ? _sessions.Count > 0 : _hostSession != null && !_hostSession.DisconnectToken.IsCancellationRequested;
+
+        readonly Dictionary<int, ClientSession> _sessions = new Dictionary<int, ClientSession>();
+        readonly ConcurrentQueue<MessageBase> _receiverQueue = new ConcurrentQueue<MessageBase>();
+        static int _nextClientId;
+
+        CancellationTokenSource _stopNetwork;
+        CancellationTokenSource _stopHostAcceptor;
+        ClientSession _hostSession;
+
+        public event Action<string> OnStatusChanged;
+        public event Action<ClientSession, MessageBase> OnMessageReceived;
+
+        public TcpNetworkManager()
+        {
+            if (Instance != null)
+                throw new InvalidOperationException("TcpNetworkManager is a singleton.");
+            Instance = this;
+        }
+
+        public void StartHost(int port = DefaultPort)
+        {
+            Shutdown();
+            IsHost = true;
+            _stopNetwork = new CancellationTokenSource();
+            _stopHostAcceptor = new CancellationTokenSource();
+
+            var task = System.Threading.Tasks.Task.Factory.StartNew(() => HostAcceptor(port),
+                _stopNetwork.Token, System.Threading.Tasks.TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+            Log($"[Net] Starting host on port {port}");
+            StatusChanged("Hosting on port " + port);
+        }
+
+        public void StartClient(string address, int port = DefaultPort)
+        {
+            Shutdown();
+            IsHost = false;
+            _stopNetwork = new CancellationTokenSource();
+
+            System.Threading.Tasks.Task.Run(() => ClientRunner(address, port));
+        }
+
+        void HostAcceptor(int port)
+        {
+            TcpListener listener = null;
+            try
+            {
+                listener = new TcpListener(IPAddress.Any, port);
+                listener.Start();
+                Log($"[Net] Listening on port {port}");
+
+                while (!_stopNetwork.IsCancellationRequested && !_stopHostAcceptor.IsCancellationRequested)
+                {
+                    try
+                    {
+                        var client = listener.AcceptTcpClient();
+                        AcceptClient(client);
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        if (!_stopNetwork.IsCancellationRequested)
+                            LogError($"[Net] Accept error: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!_stopNetwork.IsCancellationRequested)
+                    LogError($"[Net] Host acceptor error: {ex.Message}");
+            }
+            finally
+            {
+                try { listener?.Stop(); } catch { }
+                Log("[Net] Host acceptor stopped.");
+            }
+        }
+
+        void AcceptClient(TcpClient client)
+        {
+            var sessionId = Interlocked.Increment(ref _nextClientId);
+            var session = new ClientSession(sessionId);
+            session.TcpClient = client;
+            _sessions[sessionId] = session;
+
+            Log($"[Net] Client connected from {client.Client.RemoteEndPoint} (session {sessionId})");
+            StatusChanged($"Client connected: {client.Client.RemoteEndPoint}");
+
+            System.Threading.Tasks.Task.Factory.StartNew(() => ReceiverLoop(session),
+                _stopNetwork.Token, System.Threading.Tasks.TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            System.Threading.Tasks.Task.Factory.StartNew(() => SenderLoop(session),
+                _stopNetwork.Token, System.Threading.Tasks.TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        }
+
+        void ClientRunner(string address, int port)
+        {
+            Log($"[Net] Connecting to {address}:{port}...");
+            StatusChanged("Connecting to " + address + ":" + port);
+
+            try
+            {
+                var client = new TcpClient();
+                client.Connect(address, port);
+                _hostSession = new ClientSession(0);
+                _hostSession.TcpClient = client;
+
+                Log("[Net] Connected to host.");
+                StatusChanged("Connected");
+
+                System.Threading.Tasks.Task.Factory.StartNew(() => ReceiverLoop(_hostSession),
+                    _stopNetwork.Token, System.Threading.Tasks.TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                System.Threading.Tasks.Task.Factory.StartNew(() => SenderLoop(_hostSession),
+                    _stopNetwork.Token, System.Threading.Tasks.TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+                var connectMsg = new MsgConnect { ClientName = "LocalClient" };
+                SendToHost(connectMsg);
+            }
+            catch (Exception ex)
+            {
+                LogError($"[Net] Connection failed: {ex.Message}");
+                StatusChanged("Connection failed: " + ex.Message);
+
+                var err = new MsgDisconnect { Reason = "ConnectionRefused" };
+                _receiverQueue.Enqueue(err);
+            }
+        }
+
+        void SenderLoop(ClientSession session)
+        {
+            var tcpClient = session.TcpClient;
+            if (tcpClient == null) return;
+
+            Stream stream = null;
+            try
+            {
+                stream = tcpClient.GetStream();
+            }
+            catch
+            {
+                return;
+            }
+
+            LogDebug($"[Net] SenderLoop started for session {session.Id}");
+
+            try
+            {
+                var buffer = new MemoryStream(SendBufferSize);
+                var writer = new BinaryWriter(buffer, Encoding.UTF8);
+
+                while (!_stopNetwork.IsCancellationRequested && !session.DisconnectToken.IsCancellationRequested)
+                {
+                    if (session.SenderQueue.TryDequeue(out var msg))
+                    {
+                        if (msg is MsgDisconnect)
+                            break;
+
+                        ClearStream(buffer);
+                        var code = msg.MessageCodeBytes;
+                        writer.Write(0);
+                        writer.Write((byte)code.Length);
+                        writer.Write(code);
+                        var pos = buffer.Position;
+                        msg.Encode(writer);
+                        writer.Flush();
+                        var msgLength = (int)(buffer.Position - pos);
+                        var totalLength = code.Length + msgLength;
+
+                        if (!BandwidthLimit.TryConsume(totalLength + 5))
+                        {
+                            LogDebug($"[Net] Bandwidth limit hit, dropping message {msg.MessageCode} ({totalLength + 5} bytes)");
+                            continue;
+                        }
+
+                        buffer.Position = 0;
+                        writer.Write(totalLength);
+                        writer.Flush();
+
+                        buffer.Position = 0;
+                        buffer.WriteTo(stream);
+                        stream.Flush();
+                        buffer.Position = 0;
+
+                        PacketStats.RecordSent(totalLength + 5);
+                        LogDebug($"[Net] Sent {msg.MessageCode} ({totalLength + 5} bytes) to session {session.Id}");
+                    }
+                    else
+                    {
+                        session.SendSignal.WaitOne(LoopWakeupMs);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!_stopNetwork.IsCancellationRequested && !session.DisconnectToken.IsCancellationRequested)
+                    LogError($"[Net] SenderLoop crash for session {session.Id}: {ex.Message}");
+            }
+            finally
+            {
+                SessionTerminate(session);
+                try { stream?.Close(); } catch { }
+                try { tcpClient.Close(); } catch { }
+                LogDebug($"[Net] SenderLoop ended for session {session.Id}");
+            }
+        }
+
+        void ReceiverLoop(ClientSession session)
+        {
+            var tcpClient = session.TcpClient;
+            if (tcpClient == null) return;
+
+            Stream stream = null;
+            try
+            {
+                stream = tcpClient.GetStream();
+            }
+            catch
+            {
+                return;
+            }
+
+            LogDebug($"[Net] ReceiverLoop started for session {session.Id}");
+
+            try
+            {
+                var buffer = new MemoryStream(SendBufferSize);
+
+                while (!_stopNetwork.IsCancellationRequested && !session.DisconnectToken.IsCancellationRequested)
+                {
+                    ClearStream(buffer);
+                    buffer.SetLength(5);
+
+                    int read = ReadFully(stream, buffer.GetBuffer(), 0, 5);
+                    if (read != 5)
+                        throw new IOException($"[Net] ReceiverLoop expected 5 header bytes but got {read}");
+
+                    buffer.Position = 0;
+                    var reader = new BinaryReader(buffer, Encoding.UTF8);
+                    int totalLength = reader.ReadInt32();
+                    byte codeLen = reader.ReadByte();
+
+                    if (buffer.Capacity < 5 + totalLength)
+                        buffer.Capacity = 5 + totalLength;
+
+                    buffer.SetLength(5 + totalLength);
+                    read = ReadFully(stream, buffer.GetBuffer(), 5, totalLength);
+                    if (read != totalLength)
+                        throw new IOException($"[Net] ReceiverLoop expected {totalLength} bytes but got {read}");
+
+                    buffer.Position = 5;
+                    var codeBytes = buffer.GetBuffer();
+                    string messageCode = Encoding.UTF8.GetString(codeBytes, 5, codeLen);
+                    buffer.Position = 5 + codeLen;
+
+                    LogDebug($"[Net] Received message \"{messageCode}\" from session {session.Id}");
+
+                    if (MessageRegistry.TryGetHandler(messageCode, out var prototype))
+                    {
+                        try
+                        {
+                            reader = new BinaryReader(buffer, Encoding.UTF8);
+                            if (prototype.TryDecode(reader, out var decoded))
+                            {
+                                decoded.SenderClientId = session.Id;
+                                PacketStats.RecordReceived(totalLength + 5);
+                                _receiverQueue.Enqueue(decoded);
+                            }
+                            else
+                            {
+                                PacketStats.RecordError();
+                                LogWarning($"[Net] Failed to decode message \"{messageCode}\"");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            PacketStats.RecordError();
+                            LogError($"[Net] Decoder crash for \"{messageCode}\": {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        LogWarning($"[Net] Unknown message type: \"{messageCode}\"");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!_stopNetwork.IsCancellationRequested && !session.DisconnectToken.IsCancellationRequested)
+                    LogError($"[Net] ReceiverLoop crash for session {session.Id}: {ex.Message}");
+            }
+            finally
+            {
+                SessionTerminate(session);
+                try { stream?.Close(); } catch { }
+                try { tcpClient.Close(); } catch { }
+                LogDebug($"[Net] ReceiverLoop ended for session {session.Id}");
+            }
+        }
+
+        static int ReadFully(Stream stream, byte[] buffer, int offset, int length)
+        {
+            int remaining = length;
+            while (remaining > 0)
+            {
+                int read = stream.Read(buffer, offset, remaining);
+                if (read <= 0) break;
+                offset += read;
+                remaining -= read;
+            }
+            return length - remaining;
+        }
+
+        static void ClearStream(MemoryStream ms)
+        {
+            ms.Position = 0;
+            ms.SetLength(0);
+        }
+
+        void SessionTerminate(ClientSession session)
+        {
+            if (session.DisconnectToken.IsCancellationRequested) return;
+            session.DisconnectToken.Cancel();
+
+            if (!IsHost && session.Id == 0)
+            {
+                StatusChanged("Disconnected from host");
+                Log("[Net] Disconnected from host.");
+            }
+            else if (IsHost)
+            {
+                lock (_sessions)
+                {
+                    _sessions.Remove(session.Id);
+                }
+                StatusChanged($"Client disconnected: session {session.Id}. Remaining: {_sessions.Count}");
+                Log($"[Net] Client session {session.Id} terminated. Remaining clients: {_sessions.Count}");
+            }
+        }
+
+        public void SendToHost(MessageBase message)
+        {
+            if (_hostSession != null)
+                _hostSession.Send(message);
+        }
+
+        public void SendToClient(int clientId, MessageBase message)
+        {
+            lock (_sessions)
+            {
+                if (_sessions.TryGetValue(clientId, out var session))
+                    session.Send(message);
+            }
+        }
+
+        public void SendToAllClients(MessageBase message)
+        {
+            lock (_sessions)
+            {
+                foreach (var sess in _sessions.Values)
+                    sess.Send(message);
+            }
+        }
+
+        public void SendToAllExcept(int exceptId, MessageBase message)
+        {
+            lock (_sessions)
+            {
+                foreach (var sess in _sessions.Values)
+                {
+                    if (sess.Id != exceptId)
+                        sess.Send(message);
+                }
+            }
+        }
+
+        public int ClientCount
+        {
+            get
+            {
+                lock (_sessions) return _sessions.Count;
+            }
+        }
+
+        public void ProcessIncomingMessages()
+        {
+            while (_receiverQueue.TryDequeue(out var msg))
+            {
+                MainThreadQueue.Enqueue(() =>
+                {
+                    if (msg.OnReceive != null)
+                        msg.OnReceive(msg);
+                    OnMessageReceived?.Invoke(null, msg);
+                    HandleMessage(msg);
+                });
+            }
+        }
+
+        void HandleMessage(MessageBase msg)
+        {
+            switch (msg)
+            {
+                case MsgConnect connect:
+                    Log($"[Net] Client \"{connect.ClientName}\" connected (session {msg.SenderClientId})");
+                    MultiplayerSession.OnClientConnected(msg.SenderClientId, connect.ClientName);
+                    break;
+
+                case MsgDisconnect disconnect:
+                    Log($"[Net] Disconnect received: {disconnect.Reason}");
+                    break;
+
+                case MsgPlayerJoin join:
+                    Log($"[Net] Player joined: ID={join.PlayerId}, Name={join.PlayerName}");
+                    MultiplayerSession.OnPlayerJoined(join.PlayerId, join.PlayerName);
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, msg);
+                    break;
+
+                case MsgPlayerLeave leave:
+                    Log($"[Net] Player left: ID={leave.PlayerId}");
+                    MultiplayerSession.OnPlayerLeft(leave.PlayerId);
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, msg);
+                    break;
+
+                case MsgUpdateState update:
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, update);
+                    break;
+
+                case MsgChat chat:
+                    ChatManager.HandleChat(chat);
+                    break;
+
+                case MsgCursorPing ping:
+                    LogDebug($"[Net] CursorPing from player {ping.PlayerId} at {ping.Position}");
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, ping);
+                    break;
+
+                case MsgBuildObjectPlaced build:
+                    LogDebug($"[Net] BuildObjectPlaced: type={build.ObjectTypeId}, pos={build.Position}, seq={build.SequenceNumber}");
+                    if (IsHost)
+                    {
+                        LogDebug("[Net] Host rebroadcasting BuildObjectPlaced to all clients.");
+                        SendToAllExcept(msg.SenderClientId, build);
+                    }
+                    break;
+
+                case MsgSyncState sync:
+                    LogDebug($"[Net] SyncState received: tick={sync.Tick}, players={sync.PlayerCount}");
+                    break;
+
+                case MsgEntitySpawn spawn:
+                    LogDebug($"[Net] EntitySpawn: id={spawn.EntityId}, type={spawn.EntityType}, pos={spawn.Position}");
+                    Session.EntitySyncManager.ApplyRemoteSpawn(spawn);
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, spawn);
+                    break;
+
+                case MsgEntityDespawn despawn:
+                    LogDebug($"[Net] EntityDespawn: id={despawn.EntityId}");
+                    Session.EntitySyncManager.ApplyRemoteDespawn(despawn);
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, despawn);
+                    break;
+
+                case MsgRequestFullState reqState:
+                    LogDebug($"[Net] RequestFullState from player {reqState.PlayerId}");
+                    if (IsHost)
+                    {
+                        var snapshot = Session.EntitySyncManager.BuildSnapshot();
+                        SendToClient(msg.SenderClientId, snapshot);
+                    }
+                    break;
+
+                case MsgFullStateSnapshot snap:
+                    LogDebug($"[Net] FullStateSnapshot: tick={snap.Tick}, entities={snap.Entities.Count}");
+                    Session.EntitySyncManager.ApplyFullStateSnapshot(snap);
+                    break;
+
+                case MsgReadyCheck ready:
+                    LogDebug($"[Net] ReadyCheck: player {ready.PlayerId} is {(ready.IsReady ? "READY" : "NOT READY")}");
+                    Session.LobbyManager.HandleRemoteReady(ready);
+                    break;
+
+                case MsgInputCommand inputCmd:
+                    LogDebug($"[Net] InputCommand from player {inputCmd.PlayerId}: action={inputCmd.Action}");
+                    InputRouter.ProcessRemoteInput(inputCmd);
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, inputCmd);
+                    break;
+
+                case MsgBuildModeEvent buildEvt:
+                    LogDebug($"[Net] BuildModeEvent: type={buildEvt.EventType}, entity={buildEvt.EntityId}, player={buildEvt.PlayerId}");
+                    if (IsHost)
+                    {
+                        BuildSyncManager.ValidateAndApply(buildEvt);
+                        LogDebug("[Net] Host rebroadcasting BuildModeEvent to all clients.");
+                        SendToAllExcept(msg.SenderClientId, buildEvt);
+                    }
+                    else
+                    {
+                        BuildSyncManager.ValidateAndApply(buildEvt);
+                    }
+                    break;
+
+                case MsgHeartbeat hb:
+                    DesyncDetector.ProcessHeartbeat(hb);
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, hb);
+                    break;
+            }
+        }
+
+        void StatusChanged(string msg)
+        {
+            OnStatusChanged?.Invoke(msg);
+            Log($"[Net] {msg}");
+        }
+
+        public void Shutdown()
+        {
+            if (_stopNetwork == null) return;
+
+            Log("[Net] Shutting down...");
+
+            _stopHostAcceptor?.Cancel();
+            _stopNetwork.Cancel();
+
+            lock (_sessions)
+            {
+                foreach (var sess in _sessions.Values)
+                {
+                    try { sess.TcpClient?.Close(); } catch { }
+                }
+                _sessions.Clear();
+            }
+
+            if (_hostSession != null)
+            {
+                try { _hostSession.TcpClient?.Close(); } catch { }
+                _hostSession = null;
+            }
+
+            IsHost = false;
+            _stopNetwork = null;
+            _stopHostAcceptor = null;
+            Log("[Net] Shutdown complete.");
+        }
+
+        public void Dispose()
+        {
+            Shutdown();
+            Instance = null;
+        }
+
+        static void Log(object msg) => Plugin.Log?.LogInfo(msg.ToString() ?? "");
+        static void LogDebug(object msg)
+        {
+            if (Plugin.VerboseLogging)
+                Plugin.Log?.LogInfo($"[Debug] {msg}");
+        }
+        static void LogError(object msg) => Plugin.Log?.LogError(msg.ToString() ?? "");
+        static void LogWarning(object msg) => Plugin.Log?.LogWarning(msg.ToString() ?? "");
+    }
+}

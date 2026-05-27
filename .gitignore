@@ -1,0 +1,23 @@
+# Build artifacts
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+
+# IDE
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+
+# Reference repo build artifacts
+reference-mods/*/bin/
+reference-mods/*/obj/
+reference-mods/*/*.dll
+reference-mods/*/*.exe
+
+# OS files
+.DS_Store
+Thumbs.db
