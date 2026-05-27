@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>ParalivesMultiplayer.Tests</RootNamespace>
+    <AssemblyName>ParalivesMultiplayer.Tests</AssemblyName>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="xunit" Version="2.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.*">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector" Version="6.*">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Stubs\Unity.Stubs.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Stubs\BepInEx.Stubs.cs" Link="Stubs\BepInEx.Stubs.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Stubs\BepInEx.Attributes.cs" Link="Stubs\BepInEx.Attributes.cs" />
+    <Compile Include="Stubs\Plugin.Mock.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MessageBase.cs" Link="Messages\MessageBase.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgConnect.cs" Link="Messages\MsgConnect.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgDisconnect.cs" Link="Messages\MsgDisconnect.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgPlayerJoin.cs" Link="Messages\MsgPlayerJoin.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgPlayerLeave.cs" Link="Messages\MsgPlayerLeave.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgSyncState.cs" Link="Messages\MsgSyncState.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgUpdateState.cs" Link="Messages\MsgUpdateState.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgChat.cs" Link="Messages\MsgChat.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgCursorPing.cs" Link="Messages\MsgCursorPing.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgBuildObjectPlaced.cs" Link="Messages\MsgBuildObjectPlaced.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgEntitySpawn.cs" Link="Messages\MsgEntitySpawn.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgEntityDespawn.cs" Link="Messages\MsgEntityDespawn.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgRequestFullState.cs" Link="Messages\MsgRequestFullState.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgFullStateSnapshot.cs" Link="Messages\MsgFullStateSnapshot.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgReadyCheck.cs" Link="Messages\MsgReadyCheck.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgInputCommand.cs" Link="Messages\MsgInputCommand.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgBuildModeEvent.cs" Link="Messages\MsgBuildModeEvent.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgHeartbeat.cs" Link="Messages\MsgHeartbeat.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgSaveProtocol.cs" Link="Messages\MsgSaveProtocol.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgLoadProtocol.cs" Link="Messages\MsgLoadProtocol.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgReconnectRequest.cs" Link="Messages\MsgReconnectRequest.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgReconnectAck.cs" Link="Messages\MsgReconnectAck.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgHostMigration.cs" Link="Messages\MsgHostMigration.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgPing.cs" Link="Messages\MsgPing.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\Messages\MsgPong.cs" Link="Messages\MsgPong.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Networking\BinarySerializationEx.cs" Link="BinarySerializationEx.cs" />
+    <Compile Include="..\ParalivesMultiplayer\Performance\BandwidthLimiter.cs" Link="BandwidthLimiter.cs" />
+    <Compile Include="Tests\MessageSerializationTests.cs" />
+    <Compile Include="Tests\BandwidthLimiterTests.cs" />
+  </ItemGroup>
+
+</Project>
