@@ -141,7 +141,7 @@
 - [ ] Sync camera mode (free-look, follow, etc.) across clients
 - [ ] Broadcast camera target changes for spectator functionality
 - [ ] Add optional camera position sync for shared viewing experiences
-- [ ] Handle camera mode restrictions per session config
+- [ ] Handle camera mode restrictions per session ttconfig
 
 ### Milestone 8.5: Live Mode Testing
 - [ ] Test smooth movement interpolation at various tick rates (10, 20, 30, 60 Hz)
