@@ -63,6 +63,11 @@ namespace ParalivesMultiplayer.Networking
             Register(new MsgLoadInitiate());
             Register(new MsgLoadStateChunk());
             Register(new MsgLoadComplete());
+            Register(new MsgReconnectRequest());
+            Register(new MsgReconnectAck());
+            Register(new MsgHostMigration());
+            Register(new MsgPing());
+            Register(new MsgPong());
             Plugin.Log.LogInfo($"[MessageRegistry] Registered {_registry.Count} message types.");
         }
     }

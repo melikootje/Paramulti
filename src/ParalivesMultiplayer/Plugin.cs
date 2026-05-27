@@ -23,11 +23,34 @@ namespace ParalivesMultiplayer
         static ConfigEntry<bool> _cfgVerboseLogging;
         static float _lastHeartbeatTime;
         const float HeartbeatInterval = 0.5f;
+        static float _lastPingTime;
+        const float PingInterval = 2f;
         static ConfigEntry<int> _cfgListenPort;
         static ConfigEntry<string> _cfgConnectAddress;
         static ConfigEntry<bool> _cfgEnablePatches;
         static ConfigEntry<bool> _cfgBuildSyncDryRun;
         static ConfigEntry<bool> _cfgBuildSyncRealApply;
+
+        static ConfigEntry<bool> _cfgEnableReconnect;
+        static ConfigEntry<int> _cfgReconnectAttempts;
+        static ConfigEntry<int> _cfgReconnectDelayMs;
+        static ConfigEntry<int> _cfgSessionTTLSeconds;
+
+        static ConfigEntry<bool> _cfgEnableErrorRecovery;
+        static ConfigEntry<int> _cfgCircuitBreakerThreshold;
+        static ConfigEntry<int> _cfgCircuitBreakerResetMs;
+
+        static ConfigEntry<bool> _cfgEnableConnectionQuality;
+        static ConfigEntry<int> _cfgDegradedThresholdMs;
+        static ConfigEntry<int> _cfgCriticalThresholdMs;
+
+        static ConfigEntry<bool> _cfgEnableWatchdog;
+        static ConfigEntry<int> _cfgWatchdogIntervalMs;
+        static ConfigEntry<int> _cfgStuckThresholdMs;
+
+        static ConfigEntry<bool> _cfgEnableMessageAuth;
+        static ConfigEntry<string> _cfgSharedSecret;
+        static ConfigEntry<int> _cfgMaxMessagesPerSecond;
 
         public static bool VerboseLogging => _cfgVerboseLogging?.Value ?? false;
         public static int ListenPort => _cfgListenPort?.Value ?? 7890;
@@ -56,10 +79,77 @@ namespace ParalivesMultiplayer
             _cfgBuildSyncRealApply = Config.Bind("BuildSync", "RealApplyMode", false,
                 "Apply remote build events to local entity state (enable for live sync).");
 
+            _cfgEnableReconnect = Config.Bind("Production", "EnableReconnect", true,
+                "Enable automatic reconnection after network interruption.");
+            _cfgReconnectAttempts = Config.Bind("Production", "ReconnectAttempts", 5,
+                "Maximum reconnection attempts before giving up.");
+            _cfgReconnectDelayMs = Config.Bind("Production", "ReconnectDelayMs", 1000,
+                "Base delay between reconnect attempts (exponential backoff).");
+            _cfgSessionTTLSeconds = Config.Bind("Production", "SessionTTLSeconds", 120,
+                "How long to keep session state for rejoining clients (seconds).");
+
+            _cfgEnableErrorRecovery = Config.Bind("Production", "EnableErrorRecovery", true,
+                "Enable error recovery and circuit breaker pattern.");
+            _cfgCircuitBreakerThreshold = Config.Bind("Production", "CircuitBreakerThreshold", 50,
+                "Number of errors before opening circuit breaker.");
+            _cfgCircuitBreakerResetMs = Config.Bind("Production", "CircuitBreakerResetMs", 30000,
+                "Time to wait before attempting to close circuit breaker (ms).");
+
+            _cfgEnableConnectionQuality = Config.Bind("Production", "EnableConnectionQuality", true,
+                "Enable connection quality monitoring and HUD indicators.");
+            _cfgDegradedThresholdMs = Config.Bind("Production", "DegradedThresholdMs", 150,
+                "Ping threshold for degraded connection warning (ms).");
+            _cfgCriticalThresholdMs = Config.Bind("Production", "CriticalThresholdMs", 400,
+                "Ping threshold for critical connection status (ms).");
+
+            _cfgEnableWatchdog = Config.Bind("Production", "EnableWatchdog", true,
+                "Enable watchdog timer for stuck network threads.");
+            _cfgWatchdogIntervalMs = Config.Bind("Production", "WatchdogIntervalMs", 5000,
+                "How often to check thread health (ms).");
+            _cfgStuckThresholdMs = Config.Bind("Production", "StuckThresholdMs", 10000,
+                "Time without heartbeat before marking thread stuck (ms).");
+
+            _cfgEnableMessageAuth = Config.Bind("Security", "EnableMessageAuth", false,
+                "Enable HMAC message authentication for critical messages.");
+            _cfgSharedSecret = Config.Bind("Security", "SharedSecret", "",
+                "Shared secret for message authentication (leave empty to disable).");
+            _cfgMaxMessagesPerSecond = Config.Bind("Security", "MaxMessagesPerSecond", 100,
+                "Maximum messages per second allowed per client.");
+
             MessageRegistry.RegisterAll();
             DesyncDetector.Initialize();
             InputRouter.Initialize();
             BuildSyncManager.SetModes(BuildSyncDryRun, BuildSyncRealApply);
+
+            ReconnectionManager.Initialize(
+                _cfgEnableReconnect.Value,
+                _cfgReconnectAttempts.Value,
+                _cfgReconnectDelayMs.Value,
+                _cfgSessionTTLSeconds.Value);
+
+            ErrorRecoveryManager.Initialize(
+                _cfgEnableErrorRecovery.Value,
+                _cfgCircuitBreakerThreshold.Value,
+                _cfgCircuitBreakerResetMs.Value);
+
+            ConnectionQualityMonitor.Initialize(
+                _cfgEnableConnectionQuality.Value,
+                _cfgDegradedThresholdMs.Value,
+                _cfgCriticalThresholdMs.Value);
+
+            SessionWatchdog.Initialize(
+                _cfgEnableWatchdog.Value,
+                _cfgWatchdogIntervalMs.Value,
+                _cfgStuckThresholdMs.Value);
+
+            MessageAuthenticator.Initialize(
+                _cfgEnableMessageAuth.Value,
+                _cfgSharedSecret.Value);
+
+            RateLimiter.Initialize(
+                true,
+                _cfgMaxMessagesPerSecond.Value);
+
             WireEntitySyncEvents();
 
             if (EnablePatches)
@@ -96,6 +186,8 @@ namespace ParalivesMultiplayer
                 DesyncDetector.TickCheck();
                 InputRouter.UpdateDecay();
                 SendHeartbeatIfNeeded();
+                SendPingIfNeeded();
+                ReconnectionManager.CleanExpiredStates();
             }
         }
 
@@ -106,6 +198,7 @@ namespace ParalivesMultiplayer
 
         new void OnDestroy()
         {
+            SessionWatchdog.Dispose();
             TcpNetworkManager.Instance?.Dispose();
             MultiplayerSession.End();
             Log.LogInfo($"[{PluginInfo.NAME}] Shut down.");
@@ -184,6 +277,8 @@ namespace ParalivesMultiplayer
                 DesyncDetector.RegisterPlayer(id);
                 InputRouter.RegisterRemotePlayer(id);
                 BuildSyncManager.RegisterPlayer(id);
+                ConnectionQualityMonitor.RegisterClient(id);
+                RateLimiter.RegisterClient(id);
             };
 
             MultiplayerSession.PlayerLeft += (id) =>
@@ -191,6 +286,8 @@ namespace ParalivesMultiplayer
                 DesyncDetector.UnregisterPlayer(id);
                 InputRouter.UnregisterRemotePlayer(id);
                 BuildSyncManager.UnregisterPlayer(id);
+                ConnectionQualityMonitor.UnregisterClient(id);
+                RateLimiter.UnregisterClient(id);
             };
 
             BuildSyncManager.OnBuildEventRejected += (id, reason) =>
@@ -202,6 +299,41 @@ namespace ParalivesMultiplayer
             {
                 Log.LogInfo($"[BuildSync] Applied build event: type={evt.EventType}, entity={evt.EntityId}, player={evt.PlayerId}");
             };
+
+            ErrorRecoveryManager.OnCircuitStateChanged += (isOpen) =>
+            {
+                if (isOpen)
+                    Log.LogWarning("[ErrorRecovery] Circuit breaker OPENED — pausing sync");
+                else
+                    Log.LogInfo("[ErrorRecovery] Circuit breaker CLOSED — resuming sync");
+            };
+
+            ErrorRecoveryManager.OnPlayerErrorThreshold += (id, reason) =>
+            {
+                Log.LogWarning($"[ErrorRecovery] Player {id} error threshold: {reason}");
+            };
+
+            ReconnectionManager.OnReconnectSucceeded += (id, msg) =>
+            {
+                Log.LogInfo($"[Reconnect] Success for player {id}: {msg}");
+            };
+
+            ReconnectionManager.OnReconnectFailed += (id, reason) =>
+            {
+                Log.LogWarning($"[Reconnect] Failed for player {id}: {reason}");
+            };
+
+            SessionWatchdog.OnThreadStuckDetected += (name) =>
+            {
+                Log.LogError($"[Watchdog] Thread stuck: {name}");
+            };
+
+            SessionWatchdog.OnThreadRecovered += (name) =>
+            {
+                Log.LogInfo($"[Watchdog] Thread recovered: {name}");
+            };
+
+            Log.LogInfo("[Init] Phase 10 production hardening events wired.");
         }
 
         static void SendHeartbeatIfNeeded()
@@ -218,6 +350,27 @@ namespace ParalivesMultiplayer
                 net.SendToAllClients(hb);
             else
                 net.SendToHost(hb);
+        }
+
+        static void SendPingIfNeeded()
+        {
+            var now = UnityEngine.Time.time;
+            if (now - _lastPingTime < PingInterval) return;
+            _lastPingTime = now;
+
+            var net = TcpNetworkManager.Instance;
+            if (net == null) return;
+
+            var ping = new ParalivesMultiplayer.Networking.Messages.MsgPing
+            {
+                PlayerId = MultiplayerSession.LocalPlayerId,
+                TimestampMs = System.Diagnostics.Stopwatch.GetTimestamp()
+            };
+
+            if (net.IsHost)
+                net.SendToAllClients(ping);
+            else
+                net.SendToHost(ping);
         }
     }
 

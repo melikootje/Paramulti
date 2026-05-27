@@ -380,6 +380,15 @@ namespace ParalivesMultiplayer.Networking
             {
                 StatusChanged("Disconnected from host");
                 Log("[Net] Disconnected from host.");
+
+                if (ReconnectionManager.IsEnabled && MultiplayerSession.IsActive)
+                {
+                    ReconnectionManager.StartClientReconnect(
+                        MultiplayerSession.LocalPlayerId,
+                        session.ClientName ?? "LocalClient",
+                        MultiplayerSession.Tick,
+                        0);
+                }
             }
             else if (IsHost)
             {
@@ -387,6 +396,17 @@ namespace ParalivesMultiplayer.Networking
                 {
                     _sessions.Remove(session.Id);
                 }
+
+                if (ReconnectionManager.IsEnabled && MultiplayerSession.IsActive)
+                {
+                    string clientName = session.ClientName ?? $"Client_{session.Id}";
+                    ReconnectionManager.SaveClientState(
+                        session.Id,
+                        clientName,
+                        MultiplayerSession.Tick,
+                        0);
+                }
+
                 StatusChanged($"Client disconnected: session {session.Id}. Remaining: {_sessions.Count}");
                 Log($"[Net] Client session {session.Id} terminated. Remaining clients: {_sessions.Count}");
             }
@@ -440,6 +460,26 @@ namespace ParalivesMultiplayer.Networking
         {
             while (_receiverQueue.TryDequeue(out var msg))
             {
+                if (!ErrorRecoveryManager.ShouldProcessMessage())
+                {
+                    LogDebug($"[Net] Circuit breaker OPEN — dropping {msg.MessageCode} from client {msg.SenderClientId}");
+                    continue;
+                }
+
+                if (!RateLimiter.AllowMessage(msg.SenderClientId))
+                {
+                    ErrorRecoveryManager.RecordError(msg.SenderClientId, "RateLimitExceeded");
+                    LogWarning($"[Net] Rate-limited message {msg.MessageCode} from client {msg.SenderClientId} dropped");
+                    continue;
+                }
+
+                if (!ErrorRecoveryManager.ValidateMessage(msg))
+                {
+                    ErrorRecoveryManager.RecordError(msg.SenderClientId, "InvalidMessage");
+                    LogWarning($"[Net] Invalid message {msg.MessageCode} from client {msg.SenderClientId} dropped");
+                    continue;
+                }
+
                 MainThreadQueue.Enqueue(() =>
                 {
                     if (msg.OnReceive != null)
@@ -455,8 +495,9 @@ namespace ParalivesMultiplayer.Networking
             switch (msg)
             {
                 case MsgConnect connect:
-                    Log($"[Net] Client \"{connect.ClientName}\" connected (session {msg.SenderClientId})");
-                    MultiplayerSession.OnClientConnected(msg.SenderClientId, connect.ClientName);
+                    string safeName = MessageAuthenticator.SanitizePlayerName(connect.ClientName);
+                    Log($"[Net] Client \"{safeName}\" connected (session {msg.SenderClientId})");
+                    MultiplayerSession.OnClientConnected(msg.SenderClientId, safeName);
                     break;
 
                 case MsgDisconnect disconnect:
@@ -483,6 +524,13 @@ namespace ParalivesMultiplayer.Networking
                     break;
 
                 case MsgChat chat:
+                    chat.Message = MessageAuthenticator.SanitizeChatMessage(chat.Message);
+                    if (MessageAuthenticator.ContainsInjection(chat.Message))
+                    {
+                        ErrorRecoveryManager.RecordError(msg.SenderClientId, "InjectionAttempt");
+                        LogWarning($"[Net] Chat injection attempt from client {msg.SenderClientId} blocked");
+                        return;
+                    }
                     ChatManager.HandleChat(chat);
                     break;
 
@@ -616,6 +664,68 @@ namespace ParalivesMultiplayer.Networking
                             TotalChunks = loadComp.TotalChunks
                         };
                         SendToHost(ack);
+                    }
+                    break;
+
+                case MsgPing ping:
+                    LogDebug($"[Net] Ping from player {ping.PlayerId}");
+                    ConnectionQualityMonitor.RecordPingSent(ping.PlayerId);
+                    var pong = new MsgPong
+                    {
+                        PlayerId = ping.PlayerId,
+                        OriginalTimestampMs = ping.TimestampMs,
+                        ReplyTimestampMs = System.Diagnostics.Stopwatch.GetTimestamp()
+                    };
+                    if (IsHost)
+                        SendToClient(msg.SenderClientId, pong);
+                    else
+                        SendToHost(pong);
+                    break;
+
+                case MsgPong pongMsg:
+                    long rtt = (System.Diagnostics.Stopwatch.GetTimestamp() - pongMsg.OriginalTimestampMs) * 1000 / (long)System.Diagnostics.Stopwatch.Frequency;
+                    LogDebug($"[Net] Pong from player {pongMsg.PlayerId}, RTT={rtt}ms");
+                    ConnectionQualityMonitor.RecordPongReceived(pongMsg.PlayerId, rtt);
+                    break;
+
+                case MsgReconnectRequest reconnReq:
+                    LogDebug($"[Net] ReconnectRequest from player {reconnReq.PlayerId}, lastTick={reconnReq.LastKnownTick}");
+                    if (IsHost)
+                    {
+                        var allowed = ReconnectionManager.ValidateReconnectRequest(reconnReq, out var reconnAck);
+                        SendToClient(msg.SenderClientId, reconnAck);
+                        if (allowed)
+                        {
+                            Log($"[Net] Client {reconnReq.PlayerId} reconnected successfully");
+                            MultiplayerSession.OnPlayerJoined(reconnReq.PlayerId, reconnReq.ClientName);
+                            var snapshot = Session.EntitySyncManager.BuildSnapshot();
+                            SendToClient(msg.SenderClientId, snapshot);
+                        }
+                    }
+                    break;
+
+                case MsgReconnectAck reconnAck:
+                    LogDebug($"[Net] ReconnectAck for player {reconnAck.PlayerId}, allowed={reconnAck.Allowed}");
+                    ReconnectionManager.OnReconnectAckReceived(reconnAck);
+                    if (reconnAck.Allowed)
+                    {
+                        MultiplayerSession.OnPlayerJoined(reconnAck.PlayerId,
+                            MultiplayerSession.TryGetPlayerName(reconnAck.PlayerId, out var rname) ? rname : "Reconnected");
+                    }
+                    break;
+
+                case MsgHostMigration migration:
+                    Log($"[Net] HostMigration: newHost={migration.NewHostAddress}:{migration.NewHostPort}, playerId={migration.NewHostPlayerId}");
+                    if (!IsHost)
+                    {
+                        Log("[Net] Migrating to new host...");
+                        StatusChanged("Migrating to new host: " + migration.NewHostAddress);
+                        System.Threading.Tasks.Task.Run(() =>
+                        {
+                            Shutdown();
+                            System.Threading.Thread.Sleep(500);
+                            StartClient(migration.NewHostAddress, migration.NewHostPort);
+                        });
                     }
                     break;
             }
