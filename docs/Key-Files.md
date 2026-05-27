@@ -40,9 +40,48 @@
 | Thread Safety | Queue+lock | ConcurrentQueue | ConcurrentQueue |
 | Serialization | BinaryWriter/Reader | BinaryWriter/Reader | Same pattern |
 
+## Advanced Phase References (Phases 8-11)
+
+### Live-Mode Player Sync Patterns
+
+| File | Purpose | Pattern Extracted |
+|------|---------|-------------------|
+| `CupHeads/Sync/NetTick.cs` | Fixed tick rate engine | Tick-based sync with interpolation buffer |
+| `CupHeads/Sync/RemotePlayer.cs` | Remote player state | Position/rotation sync with delta compression |
+| `CupHeads/Sync/RemoteInputDriver.cs` | Input replication | Host-authoritative input routing |
+| `RavenM/RavenM/ActorPacket.cs` | Actor state packet | Compact player state serialization |
+| `RavenM/RavenM/NetActorController.cs` | Actor network control | Client prediction + server reconciliation |
+
+### Save/Load and Session Patterns
+
+| File | Purpose | Pattern Extracted |
+|------|---------|-------------------|
+| `CupHeads/Sync/SessionSync.cs` | Session state sync | Consistent snapshot capture pattern |
+| `CupHeads/Sync/SaveSlotReplicator.cs` | Save slot sync | Coordinated save across clients |
+| `RavenM/RavenM/LobbySystem.cs` | Lobby management | Session lifecycle with state persistence |
+
+### Reconnection and Error Recovery Patterns
+
+| File | Purpose | Pattern Extracted |
+|------|---------|-------------------|
+| `CupHeads/Net/NetManager.cs` | Connection management | Disconnect detection, reconnect logic |
+| `CupHeads/Sync/ParticipantStatusTracker.cs` | Player status tracking | Graceful disconnect vs. network interruption |
+| `RavenM/RavenM/IngameNetManager.cs` | Lifecycle-aware networking | Session cleanup on menu return/restart |
+
+### Production Hardening Patterns
+
+| File | Purpose | Pattern Extracted |
+|------|---------|-------------------|
+| `CupHeads/Diagnostics/BugReportExporter.cs` | Error reporting | Structured error logging with context |
+| `LiteNetLib/ReliableChannel.cs` | Reliable delivery | Circuit breaker, ACK timeout patterns |
+| `LiteNetLib/NetStatistics.cs` | Connection stats | Bandwidth/latency monitoring pattern |
+
 ### Design Principles Adopted
 1. **Separation of Concerns** - Networking isolated from game patches
 2. **Thread Safety** - Network threads never touch Unity objects directly
 3. **Clean-Room** - Pattern extraction only, no code copying
 4. **Heavy Logging** - All network events logged for debugging
 5. **Postfix First** - Prefer Postfix Harmony patches over Prefix
+6. **Host Authority** - Host validates all state changes; clients send intent only
+7. **Graceful Degradation** - Feature toggles allow partial functionality when network is poor
+8. **Tick-Based Everything** - All sync operates on fixed tick boundaries for consistency

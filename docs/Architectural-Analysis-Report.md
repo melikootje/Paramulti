@@ -147,9 +147,40 @@ Session/
 5. **Heavy Logging** - All network events logged for debugging
 6. **Clean-Room Implementation** - Extract patterns only, no code copying
 
+## Advanced Phase Considerations (Phases 8-11)
+
+### Live-Mode Player Sync Architecture
+- **Tick-Based Interpolation:** Follow CupHeads' `NetTick` pattern — fixed tick rate on host, clients buffer N states and interpolate between them
+- **Input Prediction:** Clients predict local input outcome, reconcile with host authority on next tick
+- **Delta Compression:** Only transmit changed axes; skip frames where position/rotation delta is below threshold
+- **Dead Reckoning:** When packets are missed, extrapolate from last known velocity + acceleration
+
+### Save/Load Sync Architecture
+- **Consistent Snapshot:** Freeze simulation at a tick boundary, capture world state, then resume
+- **Chunked Transfer:** Stream large world states in ordered chunks with per-chunk ACK
+- **State Verification:** Hash-critical state after load to detect corruption
+- **Entity ID Remapping:** Game may reassign entity IDs between sessions; maintain mapping table
+
+### Reconnection Architecture
+- **Session TTL:** Host retains session state for rejoining clients within configurable window
+- **Incremental Delta:** On reconnect, send only changes since client's last known tick
+- **Exponential Backoff:** Reconnect attempts with increasing delay to avoid thundering herd
+- **Host Migration:** Designate backup host proactively; on host disconnect, migrate session authority
+
+### Production Hardening Patterns
+- **Circuit Breaker:** Pause sync if error rate exceeds threshold; resume after cooldown
+- **Message Authentication:** HMAC or shared secret for critical messages (state changes, save/load)
+- **Rate Limiting:** Per-client message rate limits to prevent flooding attacks
+- **Watchdog Timer:** Detect stuck network threads; force cleanup and report
+
 ## Next Steps
 1. Implement networking layer skeleton
 2. Implement message registry and dispatcher
 3. Implement main thread queue
 4. Add Harmony patches for game lifecycle control
 5. Test with local host/client setup
+6. Build live-mode player sync with interpolation
+7. Implement save/load coordination protocol
+8. Add reconnection and error recovery
+9. Production hardening and stress testing
+10. Final integration tests and release preparation

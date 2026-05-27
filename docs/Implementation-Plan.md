@@ -111,6 +111,175 @@
 - [ ] Test desync recovery after missed heartbeats
 - [ ] Verify no game crashes from failed remote builds
 
+## Phase 8: Live-Mode Player Sync (Week 11-12)
+**Goal:** Real-time player position, rotation, and input handling during live gameplay mode
+
+### Milestone 8.1: Player State Message Schema
+- [ ] Define `MsgPlayerState` with position (Vector3), rotation (Quaternion), velocity (Vector3), and active actions
+- [ ] Define `MsgInputCommand` for remote player input replication (movement, camera, interactions)
+- [ ] Add player ID mapping: network session ID to in-game player entity ID
+- [ ] Include tick number and timestamp for interpolation and lag compensation
+- [ ] Add config toggle `EnableLivePlayerSync`
+
+### Milestone 8.2: Position/Rotation Sync Engine
+- [ ] Implement `PlayerSyncManager` class for per-player state tracking
+- [ ] Host broadcasts player state at fixed tick rate (configurable, default 30 Hz)
+- [ ] Clients interpolate between received states using previous/current/next buffers
+- [ ] Implement delta compression: only send changed axes, skip near-identical frames
+- [ ] Add snapshot buffering (keep last N states for interpolation, configurable buffer size)
+- [ ] Handle player spawn/despawn events during live mode
+
+### Milestone 8.3: Input Routing for Remote Players
+- [ ] Implement `InputRouter` that maps remote input commands to game actions
+- [ ] Host-authoritative input: clients send intent, host validates and applies
+- [ ] Add input prediction on clients for responsive feel (reconcile with host authority)
+- [ ] Handle input buffering for out-of-order packets
+- [ ] Add dead-reckoning fallback when input packets are missed
+- [ ] Support multiple simultaneous remote players
+
+### Milestone 8.4: Camera and View Sync
+- [ ] Sync camera mode (free-look, follow, etc.) across clients
+- [ ] Broadcast camera target changes for spectator functionality
+- [ ] Add optional camera position sync for shared viewing experiences
+- [ ] Handle camera mode restrictions per session config
+
+### Milestone 8.5: Live Mode Testing
+- [ ] Test smooth movement interpolation at various tick rates (10, 20, 30, 60 Hz)
+- [ ] Test input latency and prediction accuracy
+- [ ] Verify host authority enforcement (client cannot self-modify position)
+- [ ] Test with 2-4 simultaneous players
+- [ ] Measure bandwidth usage per player at steady state
+
+## Phase 9: Save/Load Synchronization (Week 13-14)
+**Goal:** Coordinated save/load operations across all connected clients
+
+### Milestone 9.1: Save Coordination Protocol
+- [ ] Implement `MsgSaveInitiate` / `MsgSaveAck` / `MsgSaveComplete` message flow
+- [ ] Host initiates save sequence, waits for all client ACKs before proceeding
+- [ ] Add save state snapshot: capture world state at a consistent tick boundary
+- [ ] Implement save pause: freeze game simulation during save window
+- [ ] Add timeout handling if clients fail to ACK within window
+- [ ] Add config toggles: `EnableSaveSync`, `SaveTimeoutSeconds`
+
+### Milestone 9.2: Load Synchronization
+- [ ] Implement `MsgLoadInitiate` / `MsgLoadStateChunk` / `MsgLoadComplete` flow
+- [ ] Host loads save file, then streams world state chunks to clients
+- [ ] Clients enter loading state, apply received chunks sequentially
+- [ ] Add chunk ordering and acknowledgment to handle packet loss
+- [ ] Implement load verification: hash-check critical state after load
+- [ ] Handle partial load failures with rollback to previous state
+
+### Milestone 9.3: World State Serialization
+- [ ] Design compact world state format: entities, positions, rotations, styles, build objects
+- [ ] Implement incremental state diffing for save chunks (only changed entities per chunk)
+- [ ] Add entity ID remapping table if game reassigns IDs between sessions
+- [ ] Support save versioning for forward/backward compatibility
+- [ ] Add compression for large world states (LZ4 or similar)
+
+### Milestone 9.4: Save/Load Edge Cases
+- [ ] Handle client disconnect during save sequence (host proceeds without them)
+- [ ] Handle client reconnect after save (re-sync from latest save state)
+- [ ] Prevent concurrent save/load operations
+- [ ] Add save conflict detection if multiple hosts claim authority
+- [ ] Log all save/load events with tick numbers for debugging
+
+### Milestone 9.5: Save/Load Testing
+- [ ] Test coordinated save with all clients present
+- [ ] Test save with one client disconnected
+- [ ] Test load synchronization with state verification
+- [ ] Test reconnect after save/load cycle
+- [ ] Verify no world state corruption after multiple save/load cycles
+
+## Phase 10: Production Hardening (Week 15-16)
+**Goal:** Reconnection logic, error recovery, connection resilience, and stability
+
+### Milestone 10.1: Reconnection System
+- [ ] Implement `MsgReconnectRequest` / `MsgReconnectAck` protocol
+- [ ] Detect client disconnect vs. network interruption (graceful vs. abrupt)
+- [ ] Maintain session state on host for rejoining clients (configurable TTL)
+- [ ] On reconnect: send incremental state delta since last known good tick
+- [ ] Add reconnection attempt backoff with exponential delay
+- [ ] Add config toggles: `EnableReconnect`, `ReconnectAttempts`, `ReconnectDelayMs`, `SessionTTLSeconds`
+
+### Milestone 10.2: Error Recovery and Fault Tolerance
+- [ ] Implement message validation: reject malformed/out-of-range messages gracefully
+- [ ] Add per-message error handling that doesn't crash the session
+- [ ] Implement state recovery after desync detection (full state resync from host)
+- [ ] Add circuit breaker pattern: pause sync if error rate exceeds threshold
+- [ ] Log all errors with context (message type, source player, tick number)
+- [ ] Add automatic session recovery after transient network failures
+
+### Milestone 10.3: Connection Quality Monitoring
+- [ ] Implement ping/latency tracking per client with moving average
+- [ ] Add packet loss rate estimation and reporting
+- [ ] Detect degraded connections and adjust sync frequency dynamically
+- [ ] Add bandwidth usage monitoring per client
+- [ ] Show connection quality indicators in debug HUD (good/warning/critical)
+- [ ] Add config: `MinSyncTickRate`, `MaxSyncTickRate`, `DegradedConnectionThresholdMs`
+
+### Milestone 10.4: Session Stability
+- [ ] Implement graceful session shutdown with cleanup of all resources
+- [ ] Add host migration protocol: designate backup host before current host disconnects
+- [ ] Handle host disconnect: either migrate to elected client or end session
+- [ ] Add session state persistence: save session config for quick recovery
+- [ ] Prevent resource leaks in network threads, file handles, and Unity objects
+- [ ] Add watchdog timer for stuck network threads with forced cleanup
+
+### Milestone 10.5: Security Hardening
+- [ ] Implement message authentication: shared secret or HMAC for critical messages
+- [ ] Add rate limiting per client to prevent message flooding
+- [ ] Validate all incoming state modifications against host authority rules
+- [ ] Sanitize player names and chat messages
+- [ ] Add connection whitelist/blacklist support
+- [ ] Add config toggles: `EnableMessageAuth`, `MaxMessagesPerSecond`, `AllowedIPs`
+
+### Milestone 10.6: Production Testing
+- [ ] Stress test with simulated packet loss and latency (use tc/netem on Linux)
+- [ ] Test reconnection flow under various disconnect scenarios
+- [ ] Verify no memory leaks after extended sessions (4+ hours)
+- [ ] Test host migration with all clients surviving the transition
+- [ ] Verify error recovery doesn't leave session in inconsistent state
+
+## Phase 11: Final Testing and Deployment Preparation (Week 17-18)
+**Goal:** Comprehensive testing, documentation, build pipeline, and release preparation
+
+### Milestone 11.1: Integration Test Suite
+- [ ] Create automated test scenarios for all message types
+- [ ] Test full session lifecycle: create -> join -> play -> save -> load -> disconnect -> reconnect -> end
+- [ ] Test all Harmony patches in isolation and combined
+- [ ] Verify no game crashes from any network event or error condition
+- [ ] Test with minimum config (all features disabled) to verify clean fallback
+
+### Milestone 11.2: Performance Benchmarking
+- [ ] Measure CPU usage overhead with 1, 2, 4, 8 connected clients
+- [ ] Profile network throughput at various tick rates and world sizes
+- [ ] Benchmark serialization/deserialization performance for large state messages
+- [ ] Measure memory footprint growth over time
+- [ ] Document performance characteristics and recommended settings
+
+### Milestone 11.3: Build and Distribution Pipeline
+- [ ] Create build script that produces release-ready DLL
+- [ ] Set up ILRepack or ILSpy merge for single-DLL distribution (optional)
+- [ ] Create BepInEx plugin manifest with proper metadata
+- [ ] Add version tracking and changelog generation
+- [ ] Create installation instructions document
+- [ ] Package with dependency list (BepInEx version, HarmonyX version, game version)
+
+### Milestone 11.4: Documentation
+- [ ] Write user-facing documentation: setup, hosting, joining, troubleshooting
+- [ ] Document all config options with defaults and descriptions
+- [ ] Create architecture overview for future contributors
+- [ ] Add inline code comments for complex algorithms (interpolation, sync, reconnection)
+- [ ] Document known limitations and unsupported scenarios
+
+### Milestone 11.5: Release Preparation
+- [ ] Final code review against all design principles in Architectural-Analysis-Report.md
+- [ ] Strip debug logging behind config toggle for release builds
+- [ ] Test clean installation on fresh BepInEx setup
+- [ ] Create release notes with feature summary and requirements
+- [ ] Tag final release commit with version number
+- [ ] Prepare GitHub release with assets and changelog
+
 ## Technical Risks and Mitigations
 
 | Risk | Impact | Mitigation |
@@ -119,6 +288,9 @@
 | Network latency causes desync | Medium | Implement tick-based sync with interpolation |
 | Thread safety issues | High | Use ConcurrentQueue, lock-free patterns where possible |
 | Performance bottlenecks | Medium | Profile early, optimize serialization |
+| Save file format changes break sync | High | Versioned save state format, fallback to full resync |
+| Host migration causes state loss | High | Session state persistence, incremental delta on reconnect |
+| Memory leaks in long sessions | Medium | Regular profiling, object pooling for messages, watchdog cleanup |
 
 ## Success Criteria
 - [ ] Host can start a session and accept client connections
@@ -127,6 +299,12 @@
 - [ ] Clean disconnect/reconnect handling
 - [ ] Debug overlay shows connection status and metrics
 - [ ] All Harmony patches work without game crashes
+- [ ] Live-mode player movement is smooth with interpolation at 30+ Hz
+- [ ] Save/load operations complete consistently across all clients
+- [ ] Reconnection works within configured TTL without full state reload
+- [ ] No memory leaks detected after 4+ hour stress sessions
+- [ ] Host migration completes with all clients surviving the transition
+- [ ] Build pipeline produces release-ready DLL with proper BepInEx manifest
 
 
 Prompt 2 — make Qwen analyze existing multiplayer mods
