@@ -64,6 +64,7 @@ namespace ParalivesMultiplayer.Patches
 
             if (MultiplayerSession.IsHost && TcpNetworkManager.Instance != null)
             {
+                SaveManager.InitiateLoad("");
                 var msg = new MsgSyncState
                 {
                     Tick = MultiplayerSession.Tick,
@@ -83,6 +84,7 @@ namespace ParalivesMultiplayer.Patches
 
             if (MultiplayerSession.IsHost && TcpNetworkManager.Instance != null)
             {
+                SaveManager.InitiateLoad(sceneName);
                 var msg = new MsgSyncState
                 {
                     Tick = MultiplayerSession.Tick,
@@ -99,6 +101,11 @@ namespace ParalivesMultiplayer.Patches
             if (!MultiplayerSession.IsActive) return;
 
             PatchLogger.Log($"Scene loading async (index): {sceneBuildIndex}");
+
+            if (MultiplayerSession.IsHost && TcpNetworkManager.Instance != null)
+            {
+                SaveManager.InitiateLoad("");
+            }
         }
     }
 }

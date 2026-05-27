@@ -564,6 +564,60 @@ namespace ParalivesMultiplayer.Networking
                     if (IsHost)
                         SendToAllExcept(msg.SenderClientId, hb);
                     break;
+
+                case MsgSaveInitiate saveInit:
+                    LogDebug($"[Net] SaveInitiate: tick={saveInit.Tick}, scene={saveInit.SceneName}");
+                    if (!IsHost)
+                    {
+                        var ack = new MsgSaveAck
+                        {
+                            PlayerId = MultiplayerSession.LocalPlayerId,
+                            Tick = saveInit.Tick,
+                            Success = true,
+                            ErrorMessage = ""
+                        };
+                        SendToHost(ack);
+                    }
+                    break;
+
+                case MsgSaveAck saveAck:
+                    LogDebug($"[Net] SaveAck: player={saveAck.PlayerId}, success={saveAck.Success}");
+                    if (IsHost)
+                        SaveManager.HandleSaveAck(saveAck);
+                    break;
+
+                case MsgSaveComplete saveComp:
+                    LogDebug($"[Net] SaveComplete: acks={saveComp.AcksReceived}/{saveComp.TotalPlayers}");
+                    SaveManager.HandleSaveComplete(saveComp);
+                    break;
+
+                case MsgLoadInitiate loadInit:
+                    LogDebug($"[Net] LoadInitiate: tick={loadInit.Tick}, scene={loadInit.SceneName}, chunks={loadInit.TotalChunks}");
+                    SaveManager.HandleLoadInitiate(loadInit);
+                    break;
+
+                case MsgLoadStateChunk loadChunk:
+                    LogDebug($"[Net] LoadStateChunk: {loadChunk.ChunkIndex}/{loadChunk.TotalChunks}, entities={loadChunk.Entities.Count}");
+                    SaveManager.HandleLoadChunk(loadChunk);
+                    break;
+
+                case MsgLoadComplete loadComp:
+                    LogDebug($"[Net] LoadComplete: player={loadComp.PlayerId}, chunks={loadComp.ChunksReceived}/{loadComp.TotalChunks}");
+                    if (IsHost)
+                        SaveManager.HandleLoadComplete(loadComp);
+                    else
+                    {
+                        var ack = new MsgLoadComplete
+                        {
+                            PlayerId = MultiplayerSession.LocalPlayerId,
+                            Tick = MultiplayerSession.Tick,
+                            Success = true,
+                            ChunksReceived = loadComp.ChunksReceived,
+                            TotalChunks = loadComp.TotalChunks
+                        };
+                        SendToHost(ack);
+                    }
+                    break;
             }
         }
 

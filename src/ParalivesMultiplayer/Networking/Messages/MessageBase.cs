@@ -57,6 +57,12 @@ namespace ParalivesMultiplayer.Networking
             Register(new MsgInputCommand());
             Register(new MsgBuildModeEvent());
             Register(new MsgHeartbeat());
+            Register(new MsgSaveInitiate());
+            Register(new MsgSaveAck());
+            Register(new MsgSaveComplete());
+            Register(new MsgLoadInitiate());
+            Register(new MsgLoadStateChunk());
+            Register(new MsgLoadComplete());
             Plugin.Log.LogInfo($"[MessageRegistry] Registered {_registry.Count} message types.");
         }
     }
