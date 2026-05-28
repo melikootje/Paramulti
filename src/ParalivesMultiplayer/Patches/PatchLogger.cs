@@ -7,14 +7,14 @@ namespace ParalivesMultiplayer.Patches
 {
     static class PatchLogger
     {
-        public static void Log(object msg) => Plugin.Log?.LogInfo($"[Patch] {msg}");
+        public static void Log(object msg) => Plugin.Log?.LogInfo($"[Paramulti] {msg}");
         public static void LogDebug(object msg)
         {
             if (Plugin.VerboseLogging)
-                Plugin.Log?.LogInfo($"[Patch][Debug] {msg}");
+                Plugin.Log?.LogInfo($"[Paramulti][Debug] {msg}");
         }
-        public static void LogError(object msg) => Plugin.Log?.LogError($"[Patch] {msg}");
-        public static void LogWarning(object msg) => Plugin.Log?.LogWarning($"[Patch] {msg}");
+        public static void LogError(object msg) => Plugin.Log?.LogError($"[Paramulti] {msg}");
+        public static void LogWarning(object msg) => Plugin.Log?.LogWarning($"[Paramulti] {msg}");
 
         public static bool TryFindMethod(string assemblyName, string typeName, string methodName, out MethodInfo methodInfo)
         {

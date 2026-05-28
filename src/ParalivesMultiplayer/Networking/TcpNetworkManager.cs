@@ -414,6 +414,14 @@ namespace ParalivesMultiplayer.Networking
                         0);
                 }
 
+                if (MultiplayerSession.IsActive)
+                {
+                    MainThreadQueue.Enqueue(() =>
+                    {
+                        MultiplayerSession.OnPlayerLeft(session.Id);
+                    });
+                }
+
                 StatusChanged($"Client disconnected: session {session.Id}. Remaining: {_sessions.Count}");
                 Log($"[Net] Client session {session.Id} terminated. Remaining clients: {_sessions.Count}");
             }
@@ -543,9 +551,7 @@ namespace ParalivesMultiplayer.Networking
               case MsgPlayerJoin join:
                     Log($"[Net] Player joined: ID={join.PlayerId}, Name={join.PlayerName}");
                     MultiplayerSession.OnPlayerJoined(join.PlayerId, join.PlayerName);
-                    if (IsHost)
-                        SendToAllExcept(msg.SenderClientId, join);
-                    else if (join.PlayerId != MultiplayerSession.LocalPlayerId)
+                    if (!IsHost && join.PlayerId != MultiplayerSession.LocalPlayerId)
                     {
                         Session.RemoteCharacterManager.CreateRemoteCharacter(join.PlayerId, join.PlayerName);
                     }

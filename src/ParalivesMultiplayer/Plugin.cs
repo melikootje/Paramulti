@@ -386,6 +386,17 @@ namespace ParalivesMultiplayer
                 Session.RemoteCharacterManager.ApplyRemoteState(playerId, position, rotation);
             };
 
+            Session.RemoteCharacterManager.OnRemoteCharacterCreated += (playerId, entry) =>
+            {
+                Session.PlayerSyncManager.SetProxyRouted(playerId, true);
+                Log.LogInfo($"[Paramulti] Proxy routed for player {playerId}");
+            };
+
+            Session.RemoteCharacterManager.OnRemoteCharacterRemoved += (playerId) =>
+            {
+                Session.PlayerSyncManager.SetProxyRouted(playerId, false);
+            };
+
             MultiplayerSession.PlayerJoined += (id, name) =>
             {
                 if (id != MultiplayerSession.LocalPlayerId)

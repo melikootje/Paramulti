@@ -167,9 +167,6 @@ namespace ParalivesMultiplayer.Patches
             var component = obj as Component;
             if (component != null) return component.transform;
 
-            var monoBehaviour = obj as MonoBehaviour;
-            if (monoBehaviour != null) return monoBehaviour.transform;
-
             var tType = obj.GetType();
             var transformProp = tType.GetProperty("transform", BindingFlags.Public | BindingFlags.Instance);
             if (transformProp != null)

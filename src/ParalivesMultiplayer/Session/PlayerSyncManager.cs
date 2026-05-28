@@ -9,6 +9,7 @@ namespace ParalivesMultiplayer.Session
     public static class PlayerSyncManager
     {
         static readonly Dictionary<int, PlayerStateBuffer> _buffers = new Dictionary<int, PlayerStateBuffer>();
+        static readonly Dictionary<int, bool> _proxyRouting = new Dictionary<int, bool>();
         static readonly object _lock = new object();
         static int _bufferSize = 30;
 
@@ -27,11 +28,21 @@ namespace ParalivesMultiplayer.Session
             }
         }
 
+        public static bool HasProxy(int playerId)
+        {
+            lock (_lock) return _proxyRouting.TryGetValue(playerId, out var has) && has;
+        }
+
+        public static void SetProxyRouted(int playerId, bool routed)
+        {
+            lock (_lock) _proxyRouting[playerId] = routed;
+        }
+
         public static void Initialize(int bufferSize = 30)
         {
             _bufferSize = bufferSize;
             ClearAll();
-            Plugin.Log.LogInfo($"[PlayerSync] Initialized with buffer size {_bufferSize}");
+            Plugin.Log.LogInfo($"[Paramulti] Initialized with buffer size {_bufferSize}");
         }
 
         public static void RegisterPlayer(int playerId)
@@ -40,7 +51,7 @@ namespace ParalivesMultiplayer.Session
             {
                 _buffers[playerId] = new PlayerStateBuffer(_bufferSize);
             }
-            Plugin.Log.LogInfo($"[PlayerSync] Registered player {playerId}");
+            Plugin.Log.LogInfo($"[Paramulti] Registered player {playerId}");
         }
 
         public static void UnregisterPlayer(int playerId)
@@ -49,7 +60,7 @@ namespace ParalivesMultiplayer.Session
             {
                 _buffers.Remove(playerId);
             }
-            Plugin.Log.LogInfo($"[PlayerSync] Unregistered player {playerId}");
+            Plugin.Log.LogInfo($"[Paramulti] Unregistered player {playerId}");
         }
 
         public static void EnqueueState(MsgUpdateState state)
@@ -85,7 +96,10 @@ namespace ParalivesMultiplayer.Session
                     var buf = kv.Value;
                     if (buf.TryGetInterpolatedState(targetTime, out var pos, out var rot))
                     {
-                        OnRemotePlayerRender?.Invoke(kv.Key, pos, rot);
+                        if (_proxyRouting.TryGetValue(kv.Key, out var routed) && routed)
+                        {
+                            OnRemotePlayerRender?.Invoke(kv.Key, pos, rot);
+                        }
                     }
                 }
             }
@@ -93,7 +107,11 @@ namespace ParalivesMultiplayer.Session
 
         public static void ClearAll()
         {
-            lock (_lock) _buffers.Clear();
+            lock (_lock)
+            {
+                _buffers.Clear();
+                _proxyRouting.Clear();
+            }
         }
     }
 
@@ -170,7 +188,7 @@ namespace ParalivesMultiplayer.Session
             {
                 if (Time.time - prev.Timestamp > 0.5f)
                 {
-                    Plugin.Log.LogWarning($"[PlayerSync] Extrapolation limit exceeded");
+                    Plugin.Log.LogWarning($"[Paramulti] Extrapolation limit exceeded");
                     return false;
                 }
                 position = prev.Position + prev.Velocity * (targetTime - prev.Timestamp);

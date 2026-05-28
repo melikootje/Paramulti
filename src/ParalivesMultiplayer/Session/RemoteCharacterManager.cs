@@ -34,7 +34,7 @@ namespace ParalivesMultiplayer.Session
 
         public static void Initialize()
         {
-            Plugin.Log.LogInfo("[RemoteChar] Initializing RemoteCharacterManager");
+            Plugin.Log.LogInfo("[Paramulti] Initializing RemoteCharacterManager");
             ParalivesGameApiResolver.Resolve();
             FindLocalCharacter();
         }
@@ -65,7 +65,7 @@ namespace ParalivesMultiplayer.Session
                                     _localCharacterTransform = transform;
                                     _localCharacterRoot = transform.gameObject;
                                     _localCharacterFound = true;
-                                    Plugin.Log.LogInfo($"[RemoteChar] Found local character: {_localCharacterRoot.name} via CharacterManager.players");
+                                    Plugin.Log.LogInfo($"[Paramulti] Found local character: {_localCharacterRoot.name} via CharacterManager.players");
                                     return;
                                 }
                             }
@@ -82,7 +82,7 @@ namespace ParalivesMultiplayer.Session
                             _localCharacterTransform = transform;
                             _localCharacterRoot = transform.gameObject;
                             _localCharacterFound = true;
-                            Plugin.Log.LogInfo($"[RemoteChar] Found local character: {_localCharacterRoot.name} via CharacterManager.currentCharacter");
+                            Plugin.Log.LogInfo($"[Paramulti] Found local character: {_localCharacterRoot.name} via CharacterManager.currentCharacter");
                             return;
                         }
                     }
@@ -99,7 +99,7 @@ namespace ParalivesMultiplayer.Session
                             _localCharacterTransform = transform;
                             _localCharacterRoot = transform.gameObject;
                             _localCharacterFound = true;
-                            Plugin.Log.LogInfo($"[RemoteChar] Found local character: {_localCharacterRoot.name} via HybridPlayer.Instance");
+                            Plugin.Log.LogInfo($"[Paramulti] Found local character: {_localCharacterRoot.name} via HybridPlayer.Instance");
                             return;
                         }
                     }
@@ -126,7 +126,7 @@ namespace ParalivesMultiplayer.Session
                                         _localCharacterTransform = transform;
                                         _localCharacterRoot = transform.gameObject;
                                         _localCharacterFound = true;
-                                        Plugin.Log.LogInfo($"[RemoteChar] Found local character: {_localCharacterRoot.name} via PlayerManager.players[{i}]");
+                                        Plugin.Log.LogInfo($"[Paramulti] Found local character: {_localCharacterRoot.name} via PlayerManager.players[{i}]");
                                         return;
                                     }
                                 }
@@ -135,11 +135,11 @@ namespace ParalivesMultiplayer.Session
                     }
                 }
 
-                Plugin.Log.LogWarning("[RemoteChar] Could not find local character through game-native APIs");
+                Plugin.Log.LogWarning("[Paramulti] Could not find local character through game-native APIs");
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[RemoteChar] Error finding local character: {ex.Message}");
+                Plugin.Log.LogError($"[Paramulti] Error finding local character: {ex.Message}");
             }
         }
 
@@ -149,17 +149,19 @@ namespace ParalivesMultiplayer.Session
             {
                 if (_remoteCharacters.ContainsKey(playerId))
                 {
-                    Plugin.Log.LogWarning($"[RemoteChar] Character for player {playerId} already exists");
+                    Plugin.Log.LogWarning($"[Paramulti] Character for player {playerId} already exists");
                     return;
                 }
             }
 
-            var entry = TryCreateGameNativeCharacter(playerId, playerName);
+            Vector3 spawnPos = ComputeSpawnPosition();
+
+            var entry = TryCreateGameNativeCharacter(playerId, playerName, spawnPos);
 
             if (entry == null)
             {
-                Plugin.Log.LogWarning($"[RemoteChar] Game-native spawn failed for player {playerId}, using fallback proxy");
-                entry = CreateFallbackProxy(playerId, playerName);
+                Plugin.Log.LogWarning($"[Paramulti] Game-native spawn failed for player {playerId}, using fallback proxy");
+                entry = CreateFallbackProxy(playerId, playerName, spawnPos);
             }
 
             lock (_lock)
@@ -168,10 +170,20 @@ namespace ParalivesMultiplayer.Session
             }
 
             OnRemoteCharacterCreated?.Invoke(playerId, entry);
-            Plugin.Log.LogInfo($"[RemoteChar] Created character for player {playerId} (name={playerName}, gameNative={entry.IsGameNative})");
+            Plugin.Log.LogInfo($"[Paramulti] Created character for player {playerId} (name={playerName}, gameNative={entry.IsGameNative}, spawnPos={spawnPos})");
         }
 
-        static RemoteCharacterEntry TryCreateGameNativeCharacter(int playerId, string playerName)
+        static Vector3 ComputeSpawnPosition()
+        {
+            if (_localCharacterTransform != null)
+            {
+                var basePos = _localCharacterTransform.position;
+                return new Vector3(basePos.x + 2f, basePos.y, basePos.z + 2f);
+            }
+            return new Vector3(0f, 0f, 0f);
+        }
+
+       static RemoteCharacterEntry TryCreateGameNativeCharacter(int playerId, string playerName, Vector3 spawnPos)
         {
             try
             {
@@ -182,7 +194,7 @@ namespace ParalivesMultiplayer.Session
                 }
 
                 var guid = GenerateGuidForPlayer(playerId);
-                Plugin.Log.LogInfo($"[RemoteChar] Attempting game-native spawn for player {playerId} with GUID={guid:X}");
+                Plugin.Log.LogInfo($"[Paramulti] Attempting game-native spawn for player {playerId} with GUID={guid:X} at {spawnPos}");
 
                 var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
 
@@ -204,16 +216,16 @@ namespace ParalivesMultiplayer.Session
                         {
                             var posProp = ParalivesGameApiResolver.AssetCharacterDataType.GetProperty("Position", BindingFlags.Public | BindingFlags.Instance);
                             if (posProp != null && posProp.CanWrite)
-                                posProp.SetValue(charData, new Vector3(0, 0, 0));
+                                posProp.SetValue(charData, spawnPos);
                         }
                         else
                         {
                             var posType = posField.FieldType;
                             if (posType == typeof(Vector3))
-                                posField.SetValue(charData, new Vector3(0, 0, 0));
+                                posField.SetValue(charData, spawnPos);
                         }
 
-                        Plugin.Log.LogInfo($"[RemoteChar] Created AssetCharacterData for player {playerId}");
+                        Plugin.Log.LogInfo($"[Paramulti] Created AssetCharacterData for player {playerId}");
                     }
                 }
 
@@ -240,7 +252,7 @@ namespace ParalivesMultiplayer.Session
                             else if (paramTypes[i] == typeof(string))
                                 args[i] = playerName;
                             else if (paramTypes[i] == typeof(Vector3))
-                                args[i] = Vector3.zero;
+                                args[i] = spawnPos;
                             else if (paramTypes[i].IsClass)
                                 args[i] = null;
                         }
@@ -248,23 +260,25 @@ namespace ParalivesMultiplayer.Session
                         result = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(charMgr, args);
                     }
 
-                    if (result != null)
+                  if (result != null)
                     {
                         var transform = ExtractTransform(result);
                         if (transform != null)
                         {
-                            Plugin.Log.LogInfo($"[RemoteChar] Successfully spawned game-native character for player {playerId} via LoadCharacterVisual");
+                            Plugin.Log.LogInfo($"[Paramulti] Successfully spawned game-native character for player {playerId} via LoadCharacterVisual");
+
+                            StripInputComponents(transform);
 
                             if (ParalivesGameApiResolver.RegisterCharacterMethod != null)
                             {
                                 try
                                 {
                                     ParalivesGameApiResolver.RegisterCharacterMethod.Invoke(charMgr, new object[] { result });
-                                    Plugin.Log.LogInfo($"[RemoteChar] Registered character with CharacterManager for player {playerId}");
+                                    Plugin.Log.LogInfo($"[Paramulti] Registered character with CharacterManager for player {playerId}");
                                 }
                                 catch (Exception ex)
                                 {
-                                    Plugin.Log.LogWarning($"[RemoteChar] RegisterCharacter failed: {ex.Message}");
+                                    Plugin.Log.LogWarning($"[Paramulti] RegisterCharacter failed: {ex.Message}");
                                 }
                             }
 
@@ -281,19 +295,19 @@ namespace ParalivesMultiplayer.Session
                         }
                     }
 
-                    Plugin.Log.LogWarning($"[RemoteChar] LoadCharacterVisual returned null or non-transform result for player {playerId}");
+                    Plugin.Log.LogWarning($"[Paramulti] LoadCharacterVisual returned null or non-transform result for player {playerId}");
                 }
 
                 return null;
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[RemoteChar] Game-native spawn exception for player {playerId}: {ex.Message}");
+                Plugin.Log.LogError($"[Paramulti] Game-native spawn exception for player {playerId}: {ex.Message}");
                 return null;
             }
         }
 
-        static RemoteCharacterEntry CreateFallbackProxy(int playerId, string playerName)
+        static RemoteCharacterEntry CreateFallbackProxy(int playerId, string playerName, Vector3 spawnPos)
         {
             try
             {
@@ -301,7 +315,7 @@ namespace ParalivesMultiplayer.Session
                 go.tag = "Untagged";
 
                 var transform = go.transform;
-                transform.position = new Vector3(0, 0, 0);
+                transform.position = spawnPos;
                 transform.rotation = Quaternion.identity;
 
                 var capsuleType = Type.GetType("UnityEngine.CapsuleCollider, UnityEngine.PhysicsModule") ?? Type.GetType("CapsuleCollider, UnityEngine");
@@ -318,22 +332,24 @@ namespace ParalivesMultiplayer.Session
                 mat.color = GetPlayerColor(playerId);
                 renderer.material = mat;
 
-                Plugin.Log.LogInfo($"[RemoteChar] Created fallback proxy for player {playerId}: {go.name}");
+                StripInputComponents(transform);
 
-                return new RemoteCharacterEntry
-                {
-                    PlayerId = playerId,
-                    CharacterGuid = GenerateGuidForPlayer(playerId),
-                    ControlledTransform = transform,
-                    FallbackProxy = go,
-                    IsGameNative = false,
-                    LastKnownPosition = Vector3.zero,
-                    LastKnownRotation = Quaternion.identity
-                };
+                Plugin.Log.LogInfo($"[Paramulti] Created fallback proxy for player {playerId}: {go.name}");
+
+               return new RemoteCharacterEntry
+                    {
+                        PlayerId = playerId,
+                        CharacterGuid = GenerateGuidForPlayer(playerId),
+                        ControlledTransform = transform,
+                        FallbackProxy = go,
+                        IsGameNative = false,
+                        LastKnownPosition = spawnPos,
+                        LastKnownRotation = Quaternion.identity
+                    };
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[RemoteChar] Failed to create fallback proxy for player {playerId}: {ex.Message}");
+                Plugin.Log.LogError($"[Paramulti] Failed to create fallback proxy for player {playerId}: {ex.Message}");
                 return null;
             }
         }
@@ -409,7 +425,7 @@ namespace ParalivesMultiplayer.Session
                 _remoteCharacters.Remove(playerId);
             }
 
-            Plugin.Log.LogInfo($"[RemoteChar] Removing character for player {playerId}");
+            Plugin.Log.LogInfo($"[Paramulti] Removing character for player {playerId}");
 
             if (entry.IsGameNative && ParalivesGameApiResolver.CharacterManagerInstance != null)
             {
@@ -438,7 +454,7 @@ namespace ParalivesMultiplayer.Session
                 }
                 catch (Exception ex)
                 {
-                    Plugin.Log.LogWarning($"[RemoteChar] Failed to clean up game-native character for player {playerId}: {ex.Message}");
+                    Plugin.Log.LogWarning($"[Paramulti] Failed to clean up game-native character for player {playerId}: {ex.Message}");
                 }
             }
 
@@ -494,7 +510,7 @@ namespace ParalivesMultiplayer.Session
                 }
                 catch (Exception ex)
                 {
-                    Plugin.Log.LogWarning($"[RemoteChar] Failed to apply state for player {playerId}: {ex.Message}");
+                    Plugin.Log.LogWarning($"[Paramulti] Failed to apply state for player {playerId}: {ex.Message}");
                     entry.ControlledTransform.position = position;
                     entry.ControlledTransform.rotation = rotation;
                 }
@@ -512,7 +528,68 @@ namespace ParalivesMultiplayer.Session
 
             _localCharacterTransform = null;
             _localCharacterFound = false;
-            Plugin.Log.LogInfo("[RemoteChar] All remote characters cleaned up");
+            Plugin.Log.LogInfo("[Paramulti] All remote characters cleaned up");
+        }
+
+       static void StripInputComponents(Transform root)
+        {
+            if (root == null) return;
+
+            var inputComponentNames = new string[]
+            {
+                "PlayerInput", "InputManager", "CharacterController",
+                "Rigidbody", "Animator", "NavMeshAgent",
+                "PlayerController", "MovementController", "InputHandler",
+                "CameraController", "ThirdPersonController", "FirstPersonController"
+            };
+
+            var toDisable = new List<Component>();
+            foreach (var comp in root.GetComponentsInChildren<Component>(true))
+            {
+                if (comp == null) continue;
+                var typeName = comp.GetType().Name.ToUpperInvariant();
+                bool shouldStrip = false;
+                foreach (var name in inputComponentNames)
+                {
+                    if (typeName.IndexOf(name.ToUpperInvariant(), StringComparison.Ordinal) >= 0)
+                    {
+                        shouldStrip = true;
+                        break;
+                    }
+                }
+                if (shouldStrip)
+                {
+                    toDisable.Add(comp);
+                }
+            }
+
+            int stripped = 0;
+            foreach (var comp in toDisable)
+            {
+                try
+                {
+                    var behaviour = comp as Behaviour;
+                    if (behaviour != null)
+                    {
+                        behaviour.enabled = false;
+                        stripped++;
+                    }
+                    else
+                    {
+                        UnityEngine.Object.DestroyImmediate(comp);
+                        stripped++;
+                    }
+                }
+                catch
+                {
+                    try { UnityEngine.Object.DestroyImmediate(comp); stripped++; } catch { }
+                }
+            }
+
+            if (stripped > 0)
+            {
+                Plugin.Log.LogInfo($"[Paramulti] Stripped {stripped} input/control components from remote character");
+            }
         }
 
         static Transform ExtractTransform(object obj)

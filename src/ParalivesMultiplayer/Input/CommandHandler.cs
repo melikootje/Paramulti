@@ -90,7 +90,7 @@ namespace ParalivesMultiplayer.Input
                 else if (_wasPressedThisFrame(_keyboard, "f7Key"))
                 {
                     try { Plugin.Log?.LogInfo("[Cmd] F7 pressed (InputSystem)"); } catch {}
-                    Disconnect();
+                    StopHost();
                     keyHandled = true;
                 }
             }
@@ -112,7 +112,7 @@ namespace ParalivesMultiplayer.Input
                 else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F7))
                 {
                     try { Plugin.Log?.LogInfo("[Cmd] F7 pressed (Legacy)"); } catch {}
-                    Disconnect();
+                    StopHost();
                     keyHandled = true;
                 }
             }
@@ -126,6 +126,8 @@ namespace ParalivesMultiplayer.Input
             {
                 TcpNetworkManager.Instance?.Dispose();
                 var mgr = new TcpNetworkManager();
+                Session.RemoteCharacterManager.Initialize();
+                Session.PlayerSyncManager.Initialize();
                 MultiplayerSession.StartAsHost();
                 mgr.StartHost(Plugin.ListenPort);
                 Plugin.Log?.LogInfo($"[Cmd] Started HOST on port {Plugin.ListenPort}");
@@ -154,19 +156,21 @@ namespace ParalivesMultiplayer.Input
             }
         }
 
-        static void Disconnect()
+        static void StopHost()
         {
             if (!MultiplayerSession.IsActive) return;
 
             try
             {
                 TcpNetworkManager.Instance?.Dispose();
+                Session.RemoteCharacterManager.OnSessionEnd();
+                Session.PlayerSyncManager.ClearAll();
                 MultiplayerSession.End();
-                Plugin.Log?.LogInfo("[Cmd] Disconnected.");
+                Plugin.Log?.LogInfo("[Cmd] Host stopped.");
             }
             catch (Exception ex)
             {
-                Plugin.Log?.LogError($"[Cmd] Disconnect error: {ex.Message}");
+                Plugin.Log?.LogError($"[Cmd] Stop error: {ex.Message}");
             }
         }
     }
