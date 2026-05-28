@@ -2,6 +2,7 @@
 bin/
 obj/
 *.dll
+!src/ParalivesMultiplayer/references/*.dll
 *.exe
 *.pdb
 
