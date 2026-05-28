@@ -8,7 +8,6 @@
     <RootNamespace>ParalivesMultiplayer</RootNamespace>
     <AssemblyName>ParalivesMultiplayer</AssemblyName>
     <Nullable>disable</Nullable>
-    <NoWarn>$(NoWarn);NU1504;NU1903;NU1902</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,10 +15,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="BepInEx.Unity.Mono" Version="6.0.0-be.1" />
-  </ItemGroup>
-
-  <ItemGroup Condition="Exists('references/UnityEngine.dll')">
+    <Reference Include="0Harmony">
+      <HintPath>references/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx">
+      <HintPath>references/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>references/UnityEngine.dll</HintPath>
       <Private>false</Private>

@@ -21,12 +21,25 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
-      - name: Download Unity stubs from game
+      - name: Download game DLLs via SteamCMD
         run: |
+          # Install SteamCMD
+          mkdir -p ~/steamcmd && cd ~/steamcmd
+          wget -q https://cdn.cloudflare.steamstatic.com/steamcmd_linux.tar.gz
+          tar -xzf steamcmd_linux.tar.gz
+          ./steamcmd.sh +login anonymous +app_update 1465780 validate +quit
+
+      - name: Extract Unity DLLs from game
+        run: |
+          GAME_DIR="$HOME/.local/share/Steam/steamapps/common/Paralives"
+          if [ ! -d "$GAME_DIR" ]; then
+            GAME_DIR="$HOME/steamcmd/Paralives"
+          fi
+          # Extract managed DLLs from game data
           mkdir -p src/ParalivesMultiplayer/references
-          # Download Paralives game data from SteamCMD or use pre-extracted stubs
-          # For now, build without Unity refs — BepInEx.Unity.Mono provides the types
-          echo "Building with BepInEx.Unity.Mono NuGet package only"
+          find "$GAME_DIR" -name "UnityEngine*.dll" -exec cp {} src/ParalivesMultiplayer/references/ \; 2>/dev/null || true
+          find "$GAME_DIR" -name "0Harmony.dll" -exec cp {} src/ParalivesMultiplayer/references/ \; 2>/dev/null || true
+          find "$GAME_DIR" -name "BepInEx.dll" -exec cp {} src/ParalivesMultiplayer/references/ \; 2>/dev/null || true
 
       - name: Build
         run: dotnet build src/ParalivesMultiplayer/ParalivesMultiplayer.csproj -c Release
