@@ -13,6 +13,9 @@ namespace ParalivesMultiplayer.Patches
         static float _lastSyncTime;
         const float SyncInterval = 0.05f;
 
+        static Transform _cachedLocalTransform;
+        static bool _transformCacheValid;
+
         public static void Apply(Harmony harmony)
         {
             PatchPlayerController(harmony);
@@ -61,6 +64,8 @@ namespace ParalivesMultiplayer.Patches
                         new HarmonyMethod(typeof(PlayerStatePatches), nameof(OnPlayerUpdatePostfix)),
                         $"Player.{playerType.Name}.Update");
                 }
+
+                PatchLogger.Log($"[PlayerState] Patches applied to {playerType.FullName}");
             }
             catch (Exception ex)
             {
@@ -94,11 +99,14 @@ namespace ParalivesMultiplayer.Patches
 
             try
             {
-                var go = __instance as GameObject;
-                if (go == null) return;
+                var transform = ExtractTransform(__instance);
+                if (transform == null) return;
 
-                var pos = go.transform.position;
-                var rot = go.transform.rotation;
+                _cachedLocalTransform = transform;
+                _transformCacheValid = true;
+
+                var pos = transform.position;
+                var rot = transform.rotation;
                 var vel = Vector3.zero;
 
                 if (MultiplayerSession.IsHost)
@@ -132,10 +140,13 @@ namespace ParalivesMultiplayer.Patches
 
             try
             {
-                var go = __instance as GameObject;
-                if (go == null) return;
-
-                PatchLogger.LogDebug($"Player update observed: {go.name}");
+                var transform = ExtractTransform(__instance);
+                if (transform != null)
+                {
+                    _cachedLocalTransform = transform;
+                    _transformCacheValid = true;
+                    PatchLogger.LogDebug($"Player update observed: {transform.gameObject.name}");
+                }
             }
             catch (Exception ex)
             {
@@ -143,10 +154,81 @@ namespace ParalivesMultiplayer.Patches
             }
         }
 
+        static Transform ExtractTransform(object obj)
+        {
+            if (obj == null) return null;
+
+            var transform = obj as Transform;
+            if (transform != null) return transform;
+
+            var go = obj as GameObject;
+            if (go != null) return go.transform;
+
+            var component = obj as Component;
+            if (component != null) return component.transform;
+
+            var monoBehaviour = obj as MonoBehaviour;
+            if (monoBehaviour != null) return monoBehaviour.transform;
+
+            var tType = obj.GetType();
+            var transformProp = tType.GetProperty("transform", BindingFlags.Public | BindingFlags.Instance);
+            if (transformProp != null)
+            {
+                try
+                {
+                    var val = transformProp.GetValue(obj);
+                    if (val is Transform t) return t;
+                }
+                catch { }
+            }
+
+            var transformField = tType.GetField("transform", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (transformField != null)
+            {
+                try
+                {
+                    var val = transformField.GetValue(obj);
+                    if (val is Transform t2) return t2;
+                }
+                catch { }
+            }
+
+            var goProp = tType.GetProperty("gameObject", BindingFlags.Public | BindingFlags.Instance);
+            if (goProp != null)
+            {
+                try
+                {
+                    var val = goProp.GetValue(obj);
+                    if (val is GameObject g) return g.transform;
+                }
+                catch { }
+            }
+
+            var goField = tType.GetField("gameObject", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (goField != null)
+            {
+                try
+                {
+                    var val = goField.GetValue(obj);
+                    if (val is GameObject g2) return g2.transform;
+                }
+                catch { }
+            }
+
+            return null;
+        }
+
         public static void SetEnabled(bool value)
         {
             _enabled = value;
             PatchLogger.Log($"Player state sync {(value ? "enabled" : "disabled")}");
+        }
+
+        public static Transform GetCachedLocalTransform()
+        {
+            if (_transformCacheValid && _cachedLocalTransform != null)
+                return _cachedLocalTransform;
+            return null;
         }
     }
 }

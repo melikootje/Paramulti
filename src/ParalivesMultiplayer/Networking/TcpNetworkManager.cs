@@ -170,6 +170,13 @@ namespace ParalivesMultiplayer.Networking
 
                 var connectMsg = new MsgConnect { ClientName = "LocalClient" };
                 SendToHost(connectMsg);
+
+                var joinMsg = new MsgPlayerJoin
+                {
+                    PlayerId = MultiplayerSession.LocalPlayerId,
+                    PlayerName = $"Client_{MultiplayerSession.LocalPlayerId}"
+                };
+                SendToHost(joinMsg);
             }
             catch (Exception ex)
             {
@@ -498,17 +505,50 @@ namespace ParalivesMultiplayer.Networking
                     string safeName = MessageAuthenticator.SanitizePlayerName(connect.ClientName);
                     Log($"[Net] Client \"{safeName}\" connected (session {msg.SenderClientId})");
                     MultiplayerSession.OnClientConnected(msg.SenderClientId, safeName);
+
+                    if (IsHost)
+                    {
+                        var joinMsg = new MsgPlayerJoin
+                        {
+                            PlayerId = msg.SenderClientId,
+                            PlayerName = safeName
+                        };
+                        SendToAllExcept(msg.SenderClientId, joinMsg);
+
+                        var hostJoin = new MsgPlayerJoin
+                        {
+                            PlayerId = 0,
+                            PlayerName = "Host"
+                        };
+                        SendToClient(msg.SenderClientId, hostJoin);
+
+                        var ids = MultiplayerSession.GetPlayerIds();
+                        var names = new string[ids.Length];
+                        for (int i = 0; i < ids.Length; i++)
+                            MultiplayerSession.TryGetPlayerName(ids[i], out names[i]);
+
+                        var roster = new MsgRosterSync
+                        {
+                            PlayerIds = ids,
+                            PlayerNames = names
+                        };
+                        SendToClient(msg.SenderClientId, roster);
+                    }
                     break;
 
                 case MsgDisconnect disconnect:
                     Log($"[Net] Disconnect received: {disconnect.Reason}");
                     break;
 
-                case MsgPlayerJoin join:
+              case MsgPlayerJoin join:
                     Log($"[Net] Player joined: ID={join.PlayerId}, Name={join.PlayerName}");
                     MultiplayerSession.OnPlayerJoined(join.PlayerId, join.PlayerName);
                     if (IsHost)
-                        SendToAllExcept(msg.SenderClientId, msg);
+                        SendToAllExcept(msg.SenderClientId, join);
+                    else if (join.PlayerId != MultiplayerSession.LocalPlayerId)
+                    {
+                        Session.RemoteCharacterManager.CreateRemoteCharacter(join.PlayerId, join.PlayerName);
+                    }
                     break;
 
                 case MsgPlayerLeave leave:
@@ -727,6 +767,22 @@ namespace ParalivesMultiplayer.Networking
                             System.Threading.Thread.Sleep(500);
                             StartClient(migration.NewHostAddress, migration.NewHostPort);
                         });
+                    }
+                    break;
+
+                case MsgRosterSync roster:
+                    Log($"[Net] RosterSync: {roster.PlayerIds?.Length ?? 0} players");
+                    if (roster.PlayerIds != null)
+                    {
+                        for (int i = 0; i < roster.PlayerIds.Length; i++)
+                        {
+                            var pid = roster.PlayerIds[i];
+                            var pname = roster.PlayerNames != null && i < roster.PlayerNames.Length ? roster.PlayerNames[i] : $"Player_{pid}";
+                            if (pid != MultiplayerSession.LocalPlayerId)
+                            {
+                                Session.RemoteCharacterManager.CreateRemoteCharacter(pid, pname);
+                            }
+                        }
                     }
                     break;
             }

@@ -59,6 +59,7 @@ namespace ParalivesMultiplayer.Networking
             Register(new Messages.MsgHostMigration());
             Register(new Messages.MsgPing());
             Register(new Messages.MsgPong());
+            Register(new Messages.MsgRosterSync());
             LogAction($"[MessageRegistry] Registered {_registry.Count} message types.");
         }
     }

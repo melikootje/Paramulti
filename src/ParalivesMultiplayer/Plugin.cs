@@ -177,6 +177,10 @@ namespace ParalivesMultiplayer
                 Log.LogInfo("[Init] Step 11: WireEntitySyncEvents");
                 WireEntitySyncEvents();
 
+                Log.LogInfo("[Init] Step 11b: RemoteCharacterManager");
+                Session.RemoteCharacterManager.Initialize();
+                WireRemoteCharacterEvents();
+
                 Log.LogInfo("[Init] Step 12: Harmony patches");
                 if (EnablePatches)
                 {
@@ -240,6 +244,7 @@ namespace ParalivesMultiplayer
         {
             try { SessionWatchdog.Dispose(); } catch {}
             try { TcpNetworkManager.Instance?.Dispose(); } catch {}
+            try { Session.RemoteCharacterManager.OnSessionEnd(); } catch {}
             try { MultiplayerSession.End(); } catch {}
             try { Log?.LogInfo($"[{PluginInfo.NAME}] Shut down."); } catch {}
         }
@@ -372,6 +377,34 @@ namespace ParalivesMultiplayer
             };
 
              Log.LogInfo("[Init] Phase 10 production hardening events wired.");
+        }
+
+        static void WireRemoteCharacterEvents()
+        {
+            Session.PlayerSyncManager.OnRemotePlayerRender += (playerId, position, rotation) =>
+            {
+                Session.RemoteCharacterManager.ApplyRemoteState(playerId, position, rotation);
+            };
+
+            MultiplayerSession.PlayerJoined += (id, name) =>
+            {
+                if (id != MultiplayerSession.LocalPlayerId)
+                {
+                    Session.RemoteCharacterManager.CreateRemoteCharacter(id, name);
+                }
+            };
+
+            MultiplayerSession.PlayerLeft += (id) =>
+            {
+                Session.RemoteCharacterManager.RemoveRemoteCharacter(id);
+            };
+
+            MultiplayerSession.OnSessionEnded += () =>
+            {
+                Session.RemoteCharacterManager.OnSessionEnd();
+            };
+
+            Log.LogInfo("[Init] RemoteCharacter events wired.");
         }
 
         static void SendHeartbeatIfNeeded()
