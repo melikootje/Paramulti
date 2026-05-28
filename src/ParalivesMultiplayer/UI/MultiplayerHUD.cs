@@ -140,20 +140,27 @@ namespace ParalivesMultiplayer.UI
                 _showDebug = !_showDebug;
             y += 27f;
 
-            if (_showDebug)
-            {
-                GUI.Box(new Rect(x, y, 420f, 130f), "", _bgStyle);
-                float dy = y + 5f;
-                GUI.Label(new Rect(x + 5f, dy, 410f, 18f), $"[D] Tick: {ParalivesMultiplayer.Session.MultiplayerSession.Tick}", _labelStyle);
-                dy += 20f;
-                GUI.Label(new Rect(x + 5f, dy, 410f, 18f), $"[D] Queue pending: {ParalivesMultiplayer.Networking.MainThreadQueue.PendingCount}", _labelStyle);
-                dy += 20f;
-                GUI.Label(new Rect(x + 5f, dy, 410f, 18f), $"[D] Sessions: {net.ClientCount}", _labelStyle);
-                dy += 20f;
-                GUI.Label(new Rect(x + 5f, dy, 410f, 18f), $"[D] Chat entries: {_chatLog.Count}", _labelStyle);
-                dy += 20f;
-                GUI.Label(new Rect(x + 5f, dy, 410f, 18f), $"[D] F5=Host | F6=Client | F7=Disconnect", _labelStyle);
-            }
+if (_showDebug)
+             {
+                 GUI.Box(new Rect(x, y, 420f, 140f), "", _bgStyle);
+                 float dy = y + 5f;
+                 GUI.Label(new Rect(x + 5f, dy, 410f, 18f), $"[D] Tick: {ParalivesMultiplayer.Session.MultiplayerSession.Tick}", _labelStyle);
+                 dy += 20f;
+                 GUI.Label(new Rect(x + 5f, dy, 410f, 18f), $"[D] Queue pending: {ParalivesMultiplayer.Networking.MainThreadQueue.PendingCount}", _labelStyle);
+                 dy += 20f;
+                 GUI.Label(new Rect(x + 5f, dy, 410f, 18f), $"[D] Sessions: {net.ClientCount}", _labelStyle);
+                 dy += 20f;
+                 GUI.Label(new Rect(x + 5f, dy, 410f, 18f), $"[D] Chat entries: {_chatLog.Count}", _labelStyle);
+                 dy += 20f;
+                 GUI.Label(new Rect(x + 5f, dy, 410f, 18f), $"[D] Remote Players: {ParalivesMultiplayer.Session.PlayerSyncManager.RemotePlayerCount}", _labelStyle);
+                 dy += 20f;
+if (GUI.Button(new Rect(x + 5f, dy, 100f, 20f), ParalivesMultiplayer.Plugin.EnableLivePlayerSync ? "Live Sync: ON" : "Live Sync: OFF"))
+                  {
+                      ParalivesMultiplayer.Plugin.EnableLivePlayerSync = !ParalivesMultiplayer.Plugin.EnableLivePlayerSync;
+                  }
+                 dy += 22f;
+                 GUI.Label(new Rect(x + 5f, dy, 410f, 18f), $"[D] F5=Host | F6=Client | F7=Disconnect", _labelStyle);
+             }
 
             float chatX = x + 440f;
             float chatY = 10f;

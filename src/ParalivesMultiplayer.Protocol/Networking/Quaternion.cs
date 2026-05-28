@@ -1,10 +1,10 @@
 namespace ParalivesMultiplayer.Networking
 {
-    public struct Quaternion
+    public struct NetQuaternion
     {
         public float x, y, z, w;
 
-        public Quaternion(float x, float y, float z, float w)
+        public NetQuaternion(float x, float y, float z, float w)
         {
             this.x = x;
             this.y = y;
@@ -12,7 +12,7 @@ namespace ParalivesMultiplayer.Networking
             this.w = w;
         }
 
-        public static Quaternion identity => new Quaternion(0, 0, 0, 1);
+        public static NetQuaternion identity => new NetQuaternion(0, 0, 0, 1);
 
         public override string ToString() => $"({x}, {y}, {z}, {w})";
     }

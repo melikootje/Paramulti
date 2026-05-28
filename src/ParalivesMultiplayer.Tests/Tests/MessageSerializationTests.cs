@@ -113,7 +113,7 @@ namespace ParalivesMultiplayer.Tests
             var orig = new MsgCursorPing
             {
                 PlayerId = 7,
-                Position = new Vector3(1.5f, 2.5f, 3.5f),
+                Position = new NetVector3(1.5f, 2.5f, 3.5f),
                 Tick = 100
             };
             var encoded = EncodeMessage(orig);
@@ -209,9 +209,9 @@ namespace ParalivesMultiplayer.Tests
                 Tick = 100,
                 EntityId = 42,
                 EntityType = "Building_Wall",
-                Position = new Vector3(10f, 0f, -5f),
-                Rotation = new Quaternion(0f, 0.707f, 0f, 0.707f),
-                Scale = new Vector3(1f, 2f, 1f)
+                Position = new NetVector3(10f, 0f, -5f),
+                Rotation = new NetQuaternion(0f, 0.707f, 0f, 0.707f),
+                Scale = new NetVector3(1f, 2f, 1f)
             };
             var encoded = EncodeMessage(orig);
             var decoded = DecodeMessage(encoded) as MsgEntitySpawn;
@@ -256,9 +256,9 @@ namespace ParalivesMultiplayer.Tests
                 EventType = BuildEventType.ObjectPlaced,
                 EntityId = 55,
                 ObjectTypeId = "Tree_Oak",
-                Position = new Vector3(20f, 1f, 30f),
-                Rotation = new Quaternion(0f, 0f, 0f, 1f),
-                Scale = new Vector3(1.5f, 1.5f, 1.5f),
+                Position = new NetVector3(20f, 1f, 30f),
+                Rotation = new NetQuaternion(0f, 0f, 0f, 1f),
+                Scale = new NetVector3(1.5f, 1.5f, 1.5f),
                 StyleName = "Default"
             };
             var encoded = EncodeMessage(orig);
@@ -289,9 +289,9 @@ namespace ParalivesMultiplayer.Tests
                     EventType = type,
                     EntityId = 1,
                     ObjectTypeId = "Test",
-                    Position = Vector3.zero,
-                    Rotation = Quaternion.identity,
-                    Scale = Vector3.one,
+                    Position = NetVector3.zero,
+                    Rotation = NetQuaternion.identity,
+                    Scale = NetVector3.one,
                     StyleName = ""
                 };
                 var encoded = EncodeMessage(orig);
@@ -389,18 +389,18 @@ namespace ParalivesMultiplayer.Tests
             {
                 EntityId = 1,
                 EntityType = "Wall",
-                Position = new Vector3(0f, 0f, 0f),
-                Rotation = Quaternion.identity,
-                Scale = Vector3.one,
+                Position = new NetVector3(0f, 0f, 0f),
+                Rotation = NetQuaternion.identity,
+                Scale = NetVector3.one,
                 OwnerPlayerId = 1
             });
             orig.Entities.Add(new EntitySnapshotEntry
             {
                 EntityId = 2,
                 EntityType = "Floor",
-                Position = new Vector3(1f, 0f, 1f),
-                Rotation = Quaternion.identity,
-                Scale = Vector3.one,
+                Position = new NetVector3(1f, 0f, 1f),
+                Rotation = NetQuaternion.identity,
+                Scale = NetVector3.one,
                 OwnerPlayerId = 2
             });
 
@@ -509,9 +509,9 @@ namespace ParalivesMultiplayer.Tests
             {
                 EntityId = 100,
                 EntityType = "Player",
-                Position = new Vector3(5f, 0f, 5f),
-                Rotation = Quaternion.identity,
-                Scale = Vector3.one,
+                Position = new NetVector3(5f, 0f, 5f),
+                Rotation = NetQuaternion.identity,
+                Scale = NetVector3.one,
                 OwnerPlayerId = 1
             });
 
@@ -521,7 +521,7 @@ namespace ParalivesMultiplayer.Tests
             Assert.NotNull(decoded);
             Assert.Equal(3000u, decoded.Tick);
             Assert.Equal(3, decoded.PlayerCount);
-            Assert.Equal(1, decoded.Entities.Count);
+            Assert.Single(decoded.Entities);
             Assert.Equal(100u, decoded.Entities[0].EntityId);
         }
 
@@ -580,8 +580,8 @@ namespace ParalivesMultiplayer.Tests
             {
                 Tick = 200,
                 PlayerId = 1,
-                Position = new Vector3(10f, 1f, 20f),
-                Rotation = new Quaternion(0f, 0.5f, 0f, 0.866f),
+                Position = new NetVector3(10f, 1f, 20f),
+                Rotation = new NetQuaternion(0f, 0.5f, 0f, 0.866f),
                 InputHorizontal = 0.5f,
                 InputVertical = -1f,
                 JumpPressed = true,
@@ -610,8 +610,8 @@ namespace ParalivesMultiplayer.Tests
                 Tick = 75,
                 SequenceNumber = 10,
                 ObjectTypeId = "Chair_Modern",
-                Position = new Vector3(5f, 0f, 5f),
-                Rotation = new Quaternion(0f, 0.707f, 0f, 0.707f),
+                Position = new NetVector3(5f, 0f, 5f),
+                Rotation = new NetQuaternion(0f, 0.707f, 0f, 0.707f),
                 StyleName = "Wooden"
             };
             var encoded = EncodeMessage(orig);
@@ -677,9 +677,9 @@ namespace ParalivesMultiplayer.Tests
                 Tick = 1,
                 EntityId = 1,
                 EntityType = "Test",
-                Position = new Vector3(-100f, -50f, -200f),
-                Rotation = new Quaternion(-0.5f, -0.5f, -0.5f, -0.5f),
-                Scale = new Vector3(1f, 1f, 1f)
+                Position = new NetVector3(-100f, -50f, -200f),
+                Rotation = new NetQuaternion(-0.5f, -0.5f, -0.5f, -0.5f),
+                Scale = new NetVector3(1f, 1f, 1f)
             };
             var encoded = EncodeMessage(orig);
             var decoded = DecodeMessage(encoded) as MsgEntitySpawn;
@@ -700,9 +700,9 @@ namespace ParalivesMultiplayer.Tests
                 EventType = BuildEventType.ObjectMoved,
                 EntityId = 777,
                 ObjectTypeId = "ComplexObject",
-                Position = new Vector3(12.345f, 67.890f, -42.123f),
-                Rotation = new Quaternion(0.1f, 0.2f, 0.3f, 0.928f),
-                Scale = new Vector3(2f, 0.5f, 1f),
+                Position = new NetVector3(12.345f, 67.890f, -42.123f),
+                Rotation = new NetQuaternion(0.1f, 0.2f, 0.3f, 0.928f),
+                Scale = new NetVector3(2f, 0.5f, 1f),
                 StyleName = "CustomStyle"
             };
 

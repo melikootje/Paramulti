@@ -56,9 +56,9 @@ namespace ParalivesMultiplayer.Networking.Messages
     {
         public uint EntityId;
         public string EntityType;
-        public Vector3 Position;
-        public Quaternion Rotation;
-        public Vector3 Scale;
+        public NetVector3 Position;
+        public NetQuaternion Rotation;
+        public NetVector3 Scale;
         public int OwnerPlayerId;
 
         public void Encode(BinaryWriter output)
@@ -77,9 +77,9 @@ namespace ParalivesMultiplayer.Networking.Messages
             {
                 EntityId = input.ReadUInt32();
                 EntityType = input.ReadString();
-                Position = input.ReadVector3();
-                Rotation = input.ReadQuaternion();
-                Scale = input.ReadVector3();
+                Position = input.ReadNetVector3();
+                Rotation = input.ReadNetQuaternion();
+                Scale = input.ReadNetVector3();
                 OwnerPlayerId = input.ReadInt32();
                 return true;
             }

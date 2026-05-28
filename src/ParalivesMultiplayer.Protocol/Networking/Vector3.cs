@@ -1,18 +1,18 @@
 namespace ParalivesMultiplayer.Networking
 {
-    public struct Vector3
+    public struct NetVector3
     {
         public float x, y, z;
 
-        public Vector3(float x, float y, float z)
+        public NetVector3(float x, float y, float z)
         {
             this.x = x;
             this.y = y;
             this.z = z;
         }
 
-        public static Vector3 zero => new Vector3(0, 0, 0);
-        public static Vector3 one => new Vector3(1, 1, 1);
+        public static NetVector3 zero => new NetVector3(0, 0, 0);
+        public static NetVector3 one => new NetVector3(1, 1, 1);
 
         public override string ToString() => $"({x}, {y}, {z})";
     }

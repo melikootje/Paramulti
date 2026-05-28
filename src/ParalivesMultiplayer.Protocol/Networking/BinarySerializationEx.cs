@@ -4,19 +4,19 @@ namespace ParalivesMultiplayer.Networking
 {
     public static class BinarySerializationEx
     {
-        public static void Write(this BinaryWriter writer, Vector3 v)
+        public static void Write(this BinaryWriter writer, NetVector3 v)
         {
             writer.Write(v.x);
             writer.Write(v.y);
             writer.Write(v.z);
         }
 
-        public static Vector3 ReadVector3(this BinaryReader reader)
+        public static NetVector3 ReadNetVector3(this BinaryReader reader)
         {
-            return new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+            return new NetVector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
         }
 
-        public static void Write(this BinaryWriter writer, Quaternion q)
+        public static void Write(this BinaryWriter writer, NetQuaternion q)
         {
             writer.Write(q.x);
             writer.Write(q.y);
@@ -24,9 +24,9 @@ namespace ParalivesMultiplayer.Networking
             writer.Write(q.w);
         }
 
-        public static Quaternion ReadQuaternion(this BinaryReader reader)
+        public static NetQuaternion ReadNetQuaternion(this BinaryReader reader)
         {
-            return new Quaternion(reader.ReadSingle(), reader.ReadSingle(),
+            return new NetQuaternion(reader.ReadSingle(), reader.ReadSingle(),
                 reader.ReadSingle(), reader.ReadSingle());
         }
     }

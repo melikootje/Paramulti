@@ -99,6 +99,7 @@ namespace ParalivesMultiplayer.Patches
 
                 var pos = go.transform.position;
                 var rot = go.transform.rotation;
+                var vel = Vector3.zero;
 
                 if (MultiplayerSession.IsHost)
                 {
@@ -110,8 +111,9 @@ namespace ParalivesMultiplayer.Patches
                     {
                         Tick = MultiplayerSession.Tick,
                         PlayerId = MultiplayerSession.LocalPlayerId,
-                        Position = pos,
-                        Rotation = rot
+                        Position = pos.FromUnity(),
+                        Velocity = vel.FromUnity(),
+                        Rotation = rot.FromUnity()
                     };
                     TcpNetworkManager.Instance.SendToHost(msg);
                     PatchLogger.LogDebug($"Client sent state update: pos={pos}");

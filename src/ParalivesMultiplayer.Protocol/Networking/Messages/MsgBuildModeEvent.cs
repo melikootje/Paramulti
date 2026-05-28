@@ -17,9 +17,9 @@ namespace ParalivesMultiplayer.Networking.Messages
         public BuildEventType EventType;
         public uint EntityId;
         public string ObjectTypeId;
-        public Vector3 Position;
-        public Quaternion Rotation;
-        public Vector3 Scale;
+        public NetVector3 Position;
+        public NetQuaternion Rotation;
+        public NetVector3 Scale;
         public string StyleName;
 
         public override void Encode(BinaryWriter output)
@@ -43,9 +43,9 @@ namespace ParalivesMultiplayer.Networking.Messages
             msg.EventType = (BuildEventType)input.ReadInt32();
             msg.EntityId = input.ReadUInt32();
             msg.ObjectTypeId = input.ReadString();
-            msg.Position = input.ReadVector3();
-            msg.Rotation = input.ReadQuaternion();
-            msg.Scale = input.ReadVector3();
+            msg.Position = input.ReadNetVector3();
+            msg.Rotation = input.ReadNetQuaternion();
+            msg.Scale = input.ReadNetVector3();
             msg.StyleName = input.ReadString();
             message = msg;
             return true;

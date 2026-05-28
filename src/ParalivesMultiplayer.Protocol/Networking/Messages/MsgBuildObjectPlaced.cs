@@ -16,8 +16,8 @@ namespace ParalivesMultiplayer.Networking.Messages
         public uint Tick;
         public uint SequenceNumber;
         public string ObjectTypeId;
-        public Vector3 Position;
-        public Quaternion Rotation;
+        public NetVector3 Position;
+        public NetQuaternion Rotation;
         public string StyleName;
 
         public override void Encode(BinaryWriter output)
@@ -38,8 +38,8 @@ namespace ParalivesMultiplayer.Networking.Messages
             msg.Tick = input.ReadUInt32();
             msg.SequenceNumber = input.ReadUInt32();
             msg.ObjectTypeId = input.ReadString();
-            msg.Position = input.ReadVector3();
-            msg.Rotation = input.ReadQuaternion();
+            msg.Position = input.ReadNetVector3();
+            msg.Rotation = input.ReadNetQuaternion();
             msg.StyleName = input.ReadString();
             message = msg;
             return true;

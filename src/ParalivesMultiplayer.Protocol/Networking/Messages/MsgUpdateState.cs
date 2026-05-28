@@ -14,8 +14,9 @@ namespace ParalivesMultiplayer.Networking.Messages
 
         public uint Tick;
         public int PlayerId;
-        public Vector3 Position;
-        public Quaternion Rotation;
+        public NetVector3 Position;
+        public NetVector3 Velocity;
+        public NetQuaternion Rotation;
         public float InputHorizontal;
         public float InputVertical;
         public bool JumpPressed;
@@ -26,6 +27,7 @@ namespace ParalivesMultiplayer.Networking.Messages
             output.Write(Tick);
             output.Write(PlayerId);
             output.Write(Position);
+            output.Write(Velocity);
             output.Write(Rotation);
             output.Write(InputHorizontal);
             output.Write(InputVertical);
@@ -38,8 +40,9 @@ namespace ParalivesMultiplayer.Networking.Messages
             var msg = new MsgUpdateState();
             msg.Tick = input.ReadUInt32();
             msg.PlayerId = input.ReadInt32();
-            msg.Position = input.ReadVector3();
-            msg.Rotation = input.ReadQuaternion();
+            msg.Position = input.ReadNetVector3();
+            msg.Velocity = input.ReadNetVector3();
+            msg.Rotation = input.ReadNetQuaternion();
             msg.InputHorizontal = input.ReadSingle();
             msg.InputVertical = input.ReadSingle();
             msg.JumpPressed = input.ReadBoolean();

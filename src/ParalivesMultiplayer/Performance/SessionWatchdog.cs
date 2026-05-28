@@ -17,7 +17,6 @@ namespace ParalivesMultiplayer.Performance
         static bool _enabled;
 
         public static event Action<string> OnThreadStuckDetected;
-        public static event Action<string> OnThreadRecovered;
 
         static SessionWatchdog()
         {

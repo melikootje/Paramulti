@@ -11,14 +11,18 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="HarmonyX" Version="2.*" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\ParalivesMultiplayer.Protocol\ParalivesMultiplayer.Protocol.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="0Harmony">
+      <HintPath>references/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx">
+      <HintPath>references/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>references/UnityEngine.dll</HintPath>
       <Private>false</Private>
@@ -35,6 +39,7 @@
       <HintPath>references/UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+
     <Reference Include="UnityEngine.TextRenderingModule">
       <HintPath>references/UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>

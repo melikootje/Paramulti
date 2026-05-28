@@ -189,7 +189,7 @@ namespace ParalivesMultiplayer.ConsoleClient
                 case MsgDisconnect m: return $"reason={m.Reason}";
                 case MsgChat m: return $"{m.PlayerName}: {m.Message}";
                 case MsgPing m: return $"ts={m.TimestampMs}";
-                case MsgPong m: return $"ts={m.TimestampMs}";
+                case MsgPong m: return $"orig={m.OriginalTimestampMs} reply={m.ReplyTimestampMs}";
                 case MsgHeartbeat m: return $"tick={m.Tick} seq={m.SequenceNumber} ts={m.TimestampMs}";
                 case MsgSyncState m: return $"tick={m.Tick} players={m.PlayerCount}";
                 case MsgPlayerJoin m: return $"playerId={m.PlayerId} name={m.PlayerName}";

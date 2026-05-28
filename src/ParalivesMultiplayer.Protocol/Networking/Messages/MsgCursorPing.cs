@@ -13,7 +13,7 @@ namespace ParalivesMultiplayer.Networking.Messages
         public override byte[] MessageCodeBytes => _codeBytes;
 
         public int PlayerId;
-        public Vector3 Position;
+        public NetVector3 Position;
         public uint Tick;
 
         public override void Encode(BinaryWriter output)
@@ -27,7 +27,7 @@ namespace ParalivesMultiplayer.Networking.Messages
         {
             var msg = new MsgCursorPing();
             msg.PlayerId = input.ReadInt32();
-            msg.Position = input.ReadVector3();
+            msg.Position = input.ReadNetVector3();
             msg.Tick = input.ReadUInt32();
             message = msg;
             return true;

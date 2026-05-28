@@ -16,9 +16,9 @@ namespace ParalivesMultiplayer.Networking.Messages
         public uint Tick;
         public uint EntityId;
         public string EntityType;
-        public Vector3 Position;
-        public Quaternion Rotation;
-        public Vector3 Scale;
+        public NetVector3 Position;
+        public NetQuaternion Rotation;
+        public NetVector3 Scale;
 
         public override void Encode(BinaryWriter output)
         {
@@ -38,9 +38,9 @@ namespace ParalivesMultiplayer.Networking.Messages
             msg.Tick = input.ReadUInt32();
             msg.EntityId = input.ReadUInt32();
             msg.EntityType = input.ReadString();
-            msg.Position = input.ReadVector3();
-            msg.Rotation = input.ReadQuaternion();
-            msg.Scale = input.ReadVector3();
+            msg.Position = input.ReadNetVector3();
+            msg.Rotation = input.ReadNetQuaternion();
+            msg.Scale = input.ReadNetVector3();
             message = msg;
             return true;
         }

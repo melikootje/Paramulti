@@ -386,9 +386,9 @@ namespace ParalivesMultiplayer.Patches
                     EventType = _inBuildMode ? BuildEventType.ModeEntered : BuildEventType.ModeExited,
                     EntityId = 0,
                     ObjectTypeId = "",
-                    Position = Vector3.zero,
-                    Rotation = Quaternion.identity,
-                    Scale = Vector3.one,
+                    Position = Vector3.zero.FromUnity(),
+                    Rotation = Quaternion.identity.FromUnity(),
+                    Scale = Vector3.one.FromUnity(),
                     StyleName = ""
                 };
 
@@ -473,7 +473,6 @@ namespace ParalivesMultiplayer.Patches
             {
                 GameObject go = null;
                 string objName = "unknown";
-                uint entityId = 0;
 
                 if (__Instance is GameObject instGo)
                 {

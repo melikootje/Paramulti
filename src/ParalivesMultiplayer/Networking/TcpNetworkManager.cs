@@ -519,6 +519,7 @@ namespace ParalivesMultiplayer.Networking
                     break;
 
                 case MsgUpdateState update:
+                    Session.PlayerSyncManager.EnqueueState(update);
                     if (IsHost)
                         SendToAllExcept(msg.SenderClientId, update);
                     break;
