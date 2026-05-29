@@ -222,7 +222,14 @@ namespace ParalivesMultiplayer
 
         private void Update()
         {
-            OnGameUpdate();
+            try
+            {
+                OnGameUpdate();
+            }
+            catch (Exception ex)
+            {
+                Log?.LogError($"[Paramulti] Unhandled exception in Update: {ex}");
+            }
         }
 
         static float _lastLocalCaptureTime;

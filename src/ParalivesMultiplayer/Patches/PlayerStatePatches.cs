@@ -18,7 +18,9 @@ namespace ParalivesMultiplayer.Patches
 
         public static void Apply(Harmony harmony)
         {
-            PatchSystemManagerLateUpdate(harmony);
+            // State capture is handled via Plugin.Update() calling OnGameUpdate()
+            // SystemManager.LateUpdate patches were removed because Harmony detours
+            // on core game methods can cause Unity crashes at JIT time.
         }
 
         static void PatchSystemManagerLateUpdate(Harmony harmony)
