@@ -18,54 +18,45 @@ namespace ParalivesMultiplayer.Patches
 
         public static void Apply(Harmony harmony)
         {
-            PatchPlayerController(harmony);
-            PatchUnityInput(harmony);
+            PatchSystemManagerLateUpdate(harmony);
         }
 
-        static void PatchPlayerController(Harmony harmony)
+        static void PatchSystemManagerLateUpdate(Harmony harmony)
         {
             try
             {
-                var playerType = null as Type;
-
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                var systemManagerType = ParalivesGameApiResolver.SystemManagerType;
+                if (systemManagerType == null)
                 {
-                    var name = asm.GetName().Name;
-                    if (name == null) continue;
-
-                    if (name.Contains("Paralives") || name.Contains("Assembly-CSharp"))
+                    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                     {
-                        playerType = asm.GetType("PlayerController");
-                        if (playerType != null) break;
-
-                        playerType = asm.GetType("Player");
-                        if (playerType != null) break;
+                        var name = asm.GetName().Name;
+                        if (name != null && name.Contains("Paralives"))
+                        {
+                            systemManagerType = asm.GetType("SystemManager");
+                            if (systemManagerType != null) break;
+                        }
                     }
                 }
 
-                if (playerType == null)
+                if (systemManagerType == null)
                 {
-                    PatchLogger.LogWarning("PlayerController/Player type not found, skipping player state patches.");
+                    PatchLogger.LogWarning("SystemManager type not found, skipping player state patches.");
                     return;
                 }
 
-                var fixedUpdate = AccessTools.Method(playerType, "FixedUpdate");
-                if (fixedUpdate != null)
+                var lateUpdate = AccessTools.Method(systemManagerType, "LateUpdate");
+                if (lateUpdate == null)
                 {
-                    PatchLogger.SafePatch(harmony, fixedUpdate,
-                        new HarmonyMethod(typeof(PlayerStatePatches), nameof(OnPlayerFixedUpdatePostfix)),
-                        $"Player.{playerType.Name}.FixedUpdate");
+                    PatchLogger.LogWarning("SystemManager.LateUpdate method not found.");
+                    return;
                 }
 
-                var update = AccessTools.Method(playerType, "Update");
-                if (update != null)
-                {
-                    PatchLogger.SafePatch(harmony, update,
-                        new HarmonyMethod(typeof(PlayerStatePatches), nameof(OnPlayerUpdatePostfix)),
-                        $"Player.{playerType.Name}.Update");
-                }
+                PatchLogger.SafePatch(harmony, lateUpdate,
+                    new HarmonyMethod(typeof(PlayerStatePatches), nameof(OnSystemManagerLateUpdatePostfix)),
+                    "SystemManager.LateUpdate");
 
-                PatchLogger.Log($"[PlayerState] Patches applied to {playerType.FullName}");
+                PatchLogger.Log($"[PlayerState] Patches applied to {systemManagerType.FullName}.LateUpdate");
             }
             catch (Exception ex)
             {
@@ -73,23 +64,8 @@ namespace ParalivesMultiplayer.Patches
             }
         }
 
-        static void PatchUnityInput(Harmony harmony)
-        {
-            try
-            {
-                var inputType = AccessTools.TypeByName("UnityEngine.Input");
-                if (inputType == null) return;
-
-                PatchLogger.LogDebug("UnityEngine.Input type available for observation.");
-            }
-            catch (Exception ex)
-            {
-                PatchLogger.LogError($"Failed to probe Unity Input: {ex.Message}");
-            }
-        }
-
         [HarmonyPriority(int.MaxValue)]
-        static void OnPlayerFixedUpdatePostfix(object __instance)
+        static void OnSystemManagerLateUpdatePostfix()
         {
             if (!MultiplayerSession.IsActive || !_enabled) return;
 
@@ -99,8 +75,13 @@ namespace ParalivesMultiplayer.Patches
 
             try
             {
-                var transform = ExtractTransform(__instance);
-                if (transform == null) return;
+                var transform = RemoteCharacterManager.LocalCharacterTransform;
+                if (transform == null)
+                {
+                    RemoteCharacterManager.FindLocalCharacter();
+                    transform = RemoteCharacterManager.LocalCharacterTransform;
+                    if (transform == null) return;
+                }
 
                 _cachedLocalTransform = transform;
                 _transformCacheValid = true;
@@ -109,48 +90,29 @@ namespace ParalivesMultiplayer.Patches
                 var rot = transform.rotation;
                 var vel = Vector3.zero;
 
+                var msg = new Networking.Messages.MsgUpdateState
+                {
+                    Tick = MultiplayerSession.Tick,
+                    PlayerId = MultiplayerSession.LocalPlayerId,
+                    Position = pos.FromUnity(),
+                    Velocity = vel.FromUnity(),
+                    Rotation = rot.FromUnity()
+                };
+
                 if (MultiplayerSession.IsHost)
                 {
-                    PatchLogger.LogDebug($"Host player state: pos={pos}, rot={rot}");
+                    TcpNetworkManager.Instance?.SendToAllClients(msg);
+                    PatchLogger.LogDebug($"[Paramulti][Local] Host captured local avatar transform. pos={pos}, rot={rot}");
                 }
                 else if (TcpNetworkManager.Instance != null)
                 {
-                    var msg = new Networking.Messages.MsgUpdateState
-                    {
-                        Tick = MultiplayerSession.Tick,
-                        PlayerId = MultiplayerSession.LocalPlayerId,
-                        Position = pos.FromUnity(),
-                        Velocity = vel.FromUnity(),
-                        Rotation = rot.FromUnity()
-                    };
                     TcpNetworkManager.Instance.SendToHost(msg);
-                    PatchLogger.LogDebug($"Client sent state update: pos={pos}");
+                    PatchLogger.LogDebug($"[Paramulti][Local] Client captured local avatar transform. pos={pos}");
                 }
             }
             catch (Exception ex)
             {
-                PatchLogger.LogError($"PlayerFixedUpdatePostfix error: {ex.Message}");
-            }
-        }
-
-        [HarmonyPriority(int.MaxValue)]
-        static void OnPlayerUpdatePostfix(object __instance)
-        {
-            if (!MultiplayerSession.IsActive || !_enabled) return;
-
-            try
-            {
-                var transform = ExtractTransform(__instance);
-                if (transform != null)
-                {
-                    _cachedLocalTransform = transform;
-                    _transformCacheValid = true;
-                    PatchLogger.LogDebug($"Player update observed: {transform.gameObject.name}");
-                }
-            }
-            catch (Exception ex)
-            {
-                PatchLogger.LogError($"PlayerUpdatePostfix error: {ex.Message}");
+                PatchLogger.LogError($"Player state capture error: {ex.Message}");
             }
         }
 

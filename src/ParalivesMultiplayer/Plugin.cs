@@ -181,6 +181,15 @@ namespace ParalivesMultiplayer
                 Session.RemoteCharacterManager.Initialize();
                 WireRemoteCharacterEvents();
 
+                Log.LogInfo("[Init] Step 11c: CharacterOwnershipManager");
+                Session.CharacterOwnershipManager.Initialize();
+
+                Log.LogInfo("[Init] Step 11d: InteractionSyncManager");
+                Session.InteractionSyncManager.Initialize();
+
+                Log.LogInfo("[Init] Step 11e: HouseholdSyncManager");
+                Session.HouseholdSyncManager.Initialize();
+
                 Log.LogInfo("[Init] Step 12: Harmony patches");
                 if (EnablePatches)
                 {
@@ -216,6 +225,9 @@ namespace ParalivesMultiplayer
             OnGameUpdate();
         }
 
+        static float _lastLocalCaptureTime;
+        const float LocalCaptureInterval = 0.05f;
+
         public static void OnGameUpdate()
         {
             MainThreadQueue.Drain();
@@ -225,6 +237,11 @@ namespace ParalivesMultiplayer
 
             if (MultiplayerSession.IsActive)
             {
+                if (!Session.RemoteCharacterManager.HasLocalCharacter)
+                    Session.RemoteCharacterManager.FindLocalCharacter();
+
+                CaptureAndSendLocalState();
+
                 DesyncDetector.TickCheck();
                 InputRouter.UpdateDecay();
                 Session.PlayerSyncManager.Enabled = EnableLivePlayerSync;
@@ -232,6 +249,52 @@ namespace ParalivesMultiplayer
                 SendHeartbeatIfNeeded();
                 SendPingIfNeeded();
                 ReconnectionManager.CleanExpiredStates();
+            }
+        }
+
+        static void CaptureAndSendLocalState()
+        {
+            var now = UnityEngine.Time.time;
+            if (now - _lastLocalCaptureTime < LocalCaptureInterval) return;
+            _lastLocalCaptureTime = now;
+
+            try
+            {
+                var transform = Session.RemoteCharacterManager.LocalCharacterTransform;
+                if (transform == null)
+                {
+                    Session.RemoteCharacterManager.FindLocalCharacter();
+                    transform = Session.RemoteCharacterManager.LocalCharacterTransform;
+                    if (transform == null) return;
+                }
+
+                var pos = transform.position;
+                var rot = transform.rotation;
+                var vel = UnityEngine.Vector3.zero;
+
+                var msg = new Networking.Messages.MsgUpdateState
+                {
+                    Tick = MultiplayerSession.Tick,
+                    PlayerId = MultiplayerSession.LocalPlayerId,
+                    Position = pos.FromUnity(),
+                    Velocity = vel.FromUnity(),
+                    Rotation = rot.FromUnity()
+                };
+
+                if (MultiplayerSession.IsHost)
+                {
+                    TcpNetworkManager.Instance?.SendToAllClients(msg);
+                    Log.LogDebug($"[Paramulti][Local] OnGameUpdate host state capture. pos={pos}");
+                }
+                else if (TcpNetworkManager.Instance != null)
+                {
+                    TcpNetworkManager.Instance.SendToHost(msg);
+                    Log.LogDebug($"[Paramulti][Local] OnGameUpdate client state capture. pos={pos}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.LogError($"[Paramulti] Local state capture error in OnGameUpdate: {ex.Message}");
             }
         }
 
@@ -256,6 +319,8 @@ namespace ParalivesMultiplayer
             SceneManagementPatches.Apply(harmony);
             GameLifecyclePatches.Apply(harmony);
             PlayerStatePatches.Apply(harmony);
+            CharacterSelectionPatches.Apply(harmony);
+            GameSavingPatches.Apply(harmony);
             BuildModePatches.Apply(harmony);
             GameLoopPatches.Apply(harmony);
 
@@ -399,20 +464,35 @@ namespace ParalivesMultiplayer
 
             MultiplayerSession.PlayerJoined += (id, name) =>
             {
-                if (id != MultiplayerSession.LocalPlayerId)
+                if (id == MultiplayerSession.LocalPlayerId)
                 {
-                    Session.RemoteCharacterManager.CreateRemoteCharacter(id, name);
+                    // Register our own character ownership
+                    Session.RemoteCharacterManager.RegisterLocalCharacterOwnership();
+                }
+                else
+                {
+                    // For remote players, character creation is deferred until we receive their MsgCharacterDataSync
+                    Log.LogInfo($"[Paramulti] Player {name} (id={id}) joined; awaiting character data sync...");
                 }
             };
 
             MultiplayerSession.PlayerLeft += (id) =>
             {
                 Session.RemoteCharacterManager.RemoveRemoteCharacter(id);
+                Session.CharacterOwnershipManager.UnregisterOwnership(id);
             };
 
             MultiplayerSession.OnSessionEnded += () =>
             {
                 Session.RemoteCharacterManager.OnSessionEnd();
+                Session.CharacterOwnershipManager.ClearAll();
+                Session.HouseholdSyncManager.ClearAll();
+                Session.InteractionSyncManager.ClearAll();
+            };
+
+            Session.InteractionSyncManager.OnRemoteInteractionRequested += (requesterPlayerId, targetGuid, interactionGuid) =>
+            {
+                Log.LogInfo($"[Paramulti] Remote interaction requested by player {requesterPlayerId} on character {targetGuid:X}, interaction={interactionGuid:X}");
             };
 
             Log.LogInfo("[Init] RemoteCharacter events wired.");

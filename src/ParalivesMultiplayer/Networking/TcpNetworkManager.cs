@@ -541,6 +541,14 @@ namespace ParalivesMultiplayer.Networking
                             PlayerNames = names
                         };
                         SendToClient(msg.SenderClientId, roster);
+
+                        // Send host's own character data to the new client
+                        var hostCharData = Session.RemoteCharacterManager.BuildLocalCharacterDataSync();
+                        if (hostCharData != null)
+                        {
+                            SendToClient(msg.SenderClientId, hostCharData);
+                            Log($"[Paramulti][Network] Sent host character data to new client {msg.SenderClientId}");
+                        }
                     }
                     break;
 
@@ -549,11 +557,18 @@ namespace ParalivesMultiplayer.Networking
                     break;
 
               case MsgPlayerJoin join:
-                    Log($"[Net] Player joined: ID={join.PlayerId}, Name={join.PlayerName}");
+                    Log($"[Paramulti][Network] Received MsgPlayerJoin for Player {join.PlayerId} (Name={join.PlayerName}).");
                     MultiplayerSession.OnPlayerJoined(join.PlayerId, join.PlayerName);
-                    if (!IsHost && join.PlayerId != MultiplayerSession.LocalPlayerId)
+
+                    // Client sends its own character data upon receiving join acknowledgment
+                    if (!IsHost && join.PlayerId == MultiplayerSession.LocalPlayerId)
                     {
-                        Session.RemoteCharacterManager.CreateRemoteCharacter(join.PlayerId, join.PlayerName);
+                        var myData = Session.RemoteCharacterManager.BuildLocalCharacterDataSync();
+                        if (myData != null)
+                        {
+                            SendToHost(myData);
+                            Log($"[Paramulti][Network] Sent local character data to host");
+                        }
                     }
                     break;
 
@@ -777,7 +792,7 @@ namespace ParalivesMultiplayer.Networking
                     break;
 
                 case MsgRosterSync roster:
-                    Log($"[Net] RosterSync: {roster.PlayerIds?.Length ?? 0} players");
+                    Log($"[Paramulti][Network] RosterSync received with {roster.PlayerIds?.Length ?? 0} players.");
                     if (roster.PlayerIds != null)
                     {
                         for (int i = 0; i < roster.PlayerIds.Length; i++)
@@ -786,10 +801,28 @@ namespace ParalivesMultiplayer.Networking
                             var pname = roster.PlayerNames != null && i < roster.PlayerNames.Length ? roster.PlayerNames[i] : $"Player_{pid}";
                             if (pid != MultiplayerSession.LocalPlayerId)
                             {
-                                Session.RemoteCharacterManager.CreateRemoteCharacter(pid, pname);
+                                MultiplayerSession.OnPlayerJoined(pid, pname);
                             }
                         }
                     }
+                    break;
+
+                case MsgCharacterDataSync charData:
+                    Log($"[Paramulti][Network] CharacterDataSync from player {charData.PlayerId}: GUID={charData.CharacterGuid:X}");
+                    Session.RemoteCharacterManager.ApplyRemoteCharacterDataSync(charData);
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, charData);
+                    break;
+
+                case MsgInteractionRequest interactReq:
+                    Log($"[Paramulti][Network] InteractionRequest from player {interactReq.RequesterPlayerId}: target={interactReq.TargetCharacterGuid:X}, interaction={interactReq.InteractionGuid:X}");
+                    Session.InteractionSyncManager.ProcessRemoteInteractionRequest(interactReq);
+                    break;
+
+                case MsgSelectCharacter selectChar:
+                    Log($"[Paramulti][Network] SelectCharacter from player {selectChar.PlayerId}: GUID={selectChar.CharacterGuid:X}, selected={selectChar.Selected}");
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, selectChar);
                     break;
             }
         }

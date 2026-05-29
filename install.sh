@@ -7,7 +7,7 @@ set -euo pipefail
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PARALIVES_DIR="${PARALIVES_DIR:-/home/meliko/.local/share/Steam/steamapps/common/Paralives}"
+PARALIVES_DIR="${PARALIVES_DIR:-/home/luna/.local/share/Steam/steamapps/common/Paralives}"
 PLUGINS_DIR="$PARALIVES_DIR/BepInEx/plugins"
 BUILD_CONFIG="${1:-Release}"
 
