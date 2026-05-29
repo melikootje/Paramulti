@@ -59,7 +59,11 @@ src/ParalivesMultiplayer/
 
 ## Quick Start
 
-### Installation
+### Automated Install (Windows)
+
+Run `ParamultiInstaller.exe` — it detects your Paralives folder, installs .NET SDK if missing, installs BepInEx, builds the mod from source, and deploys everything. See [`install-guide.md`](install-guide.md) for details.
+
+### Manual Installation
 
 1. Install [BepInEx](https://github.com/BepInEx/BepInEx) for Paralives
 2. Build the project and copy `ParalivesMultiplayer.dll` to `BepInEx/plugins/`
@@ -124,7 +128,15 @@ See `docs/Architectural-Analysis-Report.md` for detailed findings.
 ```bash
 # Requires .NET SDK 6.0+ and Unity player assemblies referenced at runtime
 dotnet build src/ParalivesMultiplayer/ParalivesMultiplayer.csproj -c Release
-# Output: src/ParalivesMultiplayer/bin/Release/ParalivesMultiplayer.dll
+# Output: src/ParalivesMultiplayer/bin/Release/netstandard2.0/ParalivesMultiplayer.dll
+```
+
+### Building the Installer Executable
+
+```bash
+dotnet publish src/ParalivesMultiplayer.Installer/ParalivesMultiplayer.Installer.csproj \
+    -c Release -r win-x64 --self-contained true -o ./installer-output
+# Output: installer-output/ParamultiInstaller.exe (standalone, no .NET required)
 ```
 
 The project uses BepInEx stubs for compile-time type checking. At runtime, the real BepInEx assemblies are loaded from the game's BepInEx installation.
