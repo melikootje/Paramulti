@@ -66,7 +66,15 @@ namespace ParalivesMultiplayer.Session
             // Always attempt instance resolution — singletons may not exist at plugin load time
             ResolveInstances();
 
-            Log($"[GameApi] Resolution status: CharacterManager={CharacterManagerInstance != null}, AssetManager={AssetManagerInstance != null}, PlayerManager={PlayerManagerInstance != null}, HouseholdManager={HouseholdManagerInstance != null}");
+            // Only log resolution status when it changes (not every frame)
+            bool anyNew = (CharacterManagerType != null && CharacterManagerInstance == null) ||
+                          (AssetManagerType != null && AssetManagerInstance == null) ||
+                          (PlayerManagerType != null && PlayerManagerInstance == null) ||
+                          (HouseholdManagerType != null && HouseholdManagerInstance == null);
+            if (anyNew || !_typesScanned)
+            {
+                Log($"[GameApi] Resolution status: CharacterManager={CharacterManagerInstance != null}, AssetManager={AssetManagerInstance != null}, PlayerManager={PlayerManagerInstance != null}, HouseholdManager={HouseholdManagerInstance != null}");
+            }
         }
 
         static void ResolveInstances()

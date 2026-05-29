@@ -45,6 +45,9 @@ namespace ParalivesMultiplayer.Session
 
             ParalivesGameApiResolver.Resolve();
 
+            // Managers not ready yet - wait silently until they are
+            if (ParalivesGameApiResolver.CharacterManagerInstance == null) return;
+
             try
             {
                 // Path 1: CharacterManager + PlayerManager CameraCurrentCharacterFollowTarget

@@ -9,9 +9,9 @@ namespace ParalivesMultiplayer.Patches
     {
         public static void Apply(Harmony harmony)
         {
-            // Plugin.Update() already calls Plugin.OnGameUpdate() every frame.
-            // SystemManager.LateUpdate patches were removed because Harmony detours
-            // on core game methods can cause Unity crashes at JIT time.
+            // Hook SystemManager.LateUpdate to drive the mod's game loop.
+            // This runs regardless of whether BaseUnityPlugin GameObject is destroyed.
+            PatchSystemManagerLateUpdate(harmony);
         }
 
         static void PatchSystemManagerLateUpdate(Harmony harmony)
@@ -61,9 +61,9 @@ namespace ParalivesMultiplayer.Patches
 
         static void SystemManagerLateUpdatePostfix()
         {
-            // Plugin.Update() already calls Plugin.OnGameUpdate() every frame.
-            // This hook is kept as a successful integration point with the game's core loop.
-            // Future game-frame-specific logic can be added here if needed.
+            // Call Plugin.OnGameUpdate each frame to keep networking, input, and HUD alive
+            // even when BaseUnityPlugin's own Update() is destroyed after Awake.
+            Plugin.OnGameUpdate();
         }
     }
 }
