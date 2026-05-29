@@ -7,7 +7,7 @@ set -euo pipefail
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PARALIVES_DIR="${PARALIVES_DIR:-/home/luna/.local/share/Steam/steamapps/common/Paralives}"
+PARALIVES_DIR="${PARALIVES_DIR:-/home/meliko/.local/share/Steam/steamapps/common/Paralives}"
 PLUGINS_DIR="$PARALIVES_DIR/BepInEx/plugins"
 BUILD_CONFIG="${1:-Release}"
 
@@ -65,6 +65,20 @@ fi
 info "Deploying to $PLUGINS_DIR"
 cp "$BUILD_DIR/ParalivesMultiplayer.dll" "$PLUGINS_DIR/"
 cp "$BUILD_DIR/ParalivesMultiplayer.Protocol.dll" "$PLUGINS_DIR/"
+
+# --- Disable BepInEx console window ---
+BEPINEX_CFG="$PARALIVES_DIR/BepInEx/config/BepInEx.cfg"
+mkdir -p "$PARALIVES_DIR/BepInEx/config"
+if [[ ! -f "$BEPINEX_CFG" ]]; then
+    cat > "$BEPINEX_CFG" << 'EOF'
+[Logging.Console]
+Enabled = false
+
+[Logging]
+Enabled = true
+EOF
+    info "Created BepInEx.cfg to disable console window"
+fi
 
 if [[ -f "$BUILD_DIR/ParalivesMultiplayer.pdb" ]]; then
     cp "$BUILD_DIR/ParalivesMultiplayer.pdb" "$PLUGINS_DIR/"
