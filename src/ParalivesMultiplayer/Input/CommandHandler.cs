@@ -1,5 +1,6 @@
 using System;
-using System.Linq;
+using System.Collections.Generic;
+using System.Reflection;
 using ParalivesMultiplayer.Networking;
 using ParalivesMultiplayer.Session;
 
@@ -8,9 +9,9 @@ namespace ParalivesMultiplayer.Input
     public static class CommandHandler
     {
         static bool _initialized;
-        static object _keyboard;
-        static bool _inputSystemReady;
-        static Func<object, string, bool> _wasPressedThisFrame;
+        static Type _keyboardType;
+        static PropertyInfo _keyboardCurrentProp;
+        static readonly Dictionary<string, PropertyInfo> _keyPropCache = new Dictionary<string, PropertyInfo>();
 
         public static void Initialize()
         {
@@ -19,103 +20,122 @@ namespace ParalivesMultiplayer.Input
 
             try
             {
-                var inputSystemAssembly = AppDomain.CurrentDomain.GetAssemblies()
-                    .FirstOrDefault(a => a.GetName().Name == "Unity.InputSystem");
-
-                if (inputSystemAssembly != null)
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    var keyboardType = inputSystemAssembly.GetType("UnityEngine.InputSystem.Keyboard");
-                    if (keyboardType != null)
+                    try
                     {
-                        var currentProp = keyboardType.GetProperty("current");
-                        _keyboard = currentProp?.GetValue(null);
-
-                        if (_keyboard != null)
+                        var t = asm.GetType("UnityEngine.InputSystem.Keyboard");
+                        if (t != null)
                         {
-                            var keyBindingType = keyboardType.GetProperties()
-                                .FirstOrDefault(p => p.Name == "f5Key" && p.PropertyType.Name.Contains("Key"));
-
-                            if (keyBindingType != null)
-                            {
-                                var keyType = keyBindingType.PropertyType;
-                                var wasPressedProp = keyType.GetProperty("wasPressedThisFrame");
-                                if (wasPressedProp != null)
-                                {
-                                    _wasPressedThisFrame = (kb, keyName) =>
-                                    {
-                                        try
-                                        {
-                                            var keyProp = kb.GetType().GetProperty(keyName);
-                                            var keyObj = keyProp?.GetValue(kb);
-                                            return (bool)keyObj.GetType().GetProperty("wasPressedThisFrame")?.GetValue(keyObj);
-                                        }
-                                        catch { return false; }
-                                    };
-                                }
-                            }
-
-                            _inputSystemReady = _wasPressedThisFrame != null;
+                            _keyboardType = t;
+                            _keyboardCurrentProp = t.GetProperty("current",
+                                BindingFlags.Public | BindingFlags.Static);
+                            PreloadKeyProperty("f5Key");
+                            PreloadKeyProperty("f6Key");
+                            PreloadKeyProperty("f7Key");
+                            break;
                         }
                     }
+                    catch { }
                 }
             }
             catch (Exception ex)
             {
-                try { Plugin.Log?.LogWarning($"[Cmd] InputSystem init failed: {ex.Message}"); } catch {}
+                try { Plugin.Log?.LogWarning($"[Cmd] InputSystem init: {ex.Message}"); } catch { }
             }
 
-            try { Plugin.Log?.LogInfo($"[Cmd] Initialized. InputSystem={_inputSystemReady}. F5=Host, F6=Client, F7=Disconnect."); } catch {}
+            bool ready = _keyboardType != null && _keyboardCurrentProp != null;
+            try { Plugin.Log?.LogInfo($"[Cmd] Initialized. InputSystem={ready}. F5=Host, F6=Client, F7=Disconnect."); } catch { }
+        }
+
+        static void PreloadKeyProperty(string propName)
+        {
+            if (_keyboardType == null) return;
+            try
+            {
+                var prop = _keyboardType.GetProperty(propName,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (prop != null)
+                    _keyPropCache[propName] = prop;
+            }
+            catch { }
         }
 
         public static void ProcessInput()
         {
             if (!_initialized) return;
 
-            bool keyHandled = false;
-
-            if (_inputSystemReady && _keyboard != null && _wasPressedThisFrame != null)
+            if (_keyboardType != null && _keyboardCurrentProp != null)
             {
-                if (_wasPressedThisFrame(_keyboard, "f5Key"))
+                try
                 {
-                    try { Plugin.Log?.LogInfo("[Cmd] F5 pressed (InputSystem)"); } catch {}
-                    StartHost();
-                    keyHandled = true;
+                    var keyboard = _keyboardCurrentProp.GetValue(null);
+                    if (keyboard != null)
+                    {
+                        if (IsKeyPressedThisFrame(keyboard, "f5Key"))
+                        {
+                            try { Plugin.Log?.LogInfo("[Cmd] F5 pressed (InputSystem)"); } catch { }
+                            StartHost();
+                            return;
+                        }
+                        if (IsKeyPressedThisFrame(keyboard, "f6Key"))
+                        {
+                            try { Plugin.Log?.LogInfo("[Cmd] F6 pressed (InputSystem)"); } catch { }
+                            StartClient();
+                            return;
+                        }
+                        if (IsKeyPressedThisFrame(keyboard, "f7Key"))
+                        {
+                            try { Plugin.Log?.LogInfo("[Cmd] F7 pressed (InputSystem)"); } catch { }
+                            StopHost();
+                            return;
+                        }
+                    }
                 }
-                else if (_wasPressedThisFrame(_keyboard, "f6Key"))
-                {
-                    try { Plugin.Log?.LogInfo("[Cmd] F6 pressed (InputSystem)"); } catch {}
-                    StartClient();
-                    keyHandled = true;
-                }
-                else if (_wasPressedThisFrame(_keyboard, "f7Key"))
-                {
-                    try { Plugin.Log?.LogInfo("[Cmd] F7 pressed (InputSystem)"); } catch {}
-                    StopHost();
-                    keyHandled = true;
-                }
+                catch { }
             }
 
-            if (!keyHandled)
+            // Legacy input fallback
+            if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F5))
             {
-                if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F5))
-                {
-                    try { Plugin.Log?.LogInfo("[Cmd] F5 pressed (Legacy)"); } catch {}
-                    StartHost();
-                    keyHandled = true;
-                }
-                else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F6))
-                {
-                    try { Plugin.Log?.LogInfo("[Cmd] F6 pressed (Legacy)"); } catch {}
-                    StartClient();
-                    keyHandled = true;
-                }
-                else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F7))
-                {
-                    try { Plugin.Log?.LogInfo("[Cmd] F7 pressed (Legacy)"); } catch {}
-                    StopHost();
-                    keyHandled = true;
-                }
+                try { Plugin.Log?.LogInfo("[Cmd] F5 pressed (Legacy)"); } catch { }
+                StartHost();
             }
+            else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F6))
+            {
+                try { Plugin.Log?.LogInfo("[Cmd] F6 pressed (Legacy)"); } catch { }
+                StartClient();
+            }
+            else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F7))
+            {
+                try { Plugin.Log?.LogInfo("[Cmd] F7 pressed (Legacy)"); } catch { }
+                StopHost();
+            }
+        }
+
+        static bool IsKeyPressedThisFrame(object keyboard, string propName)
+        {
+            try
+            {
+                PropertyInfo prop;
+                if (!_keyPropCache.TryGetValue(propName, out prop))
+                {
+                    prop = _keyboardType?.GetProperty(propName,
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (prop == null) return false;
+                    _keyPropCache[propName] = prop;
+                }
+
+                var keyControl = prop.GetValue(keyboard);
+                if (keyControl == null) return false;
+
+                var wasPressedProp = keyControl.GetType().GetProperty("wasPressedThisFrame",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (wasPressedProp == null) return false;
+
+                return (bool)wasPressedProp.GetValue(keyControl);
+            }
+            catch { return false; }
         }
 
         static void StartHost()
