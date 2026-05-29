@@ -92,8 +92,6 @@ namespace ParalivesMultiplayer.Session
                                             var guid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
                                             if (guid == followGuid)
                                             {
-                                                Plugin.Log.LogInfo($"[Paramulti] MATCHED local character AssetCharacter! Dumping all members...");
-                                                DumpAssetCharacterMembers(c);
                                                 var visualProp = c.GetType().GetProperty("Visual");
                                                 var visual = visualProp?.GetValue(c);
                                                 var t = ExtractTransform(visual);
@@ -130,7 +128,6 @@ namespace ParalivesMultiplayer.Session
                                         else
                                         {
                                             Plugin.Log.LogInfo("[Paramulti] CharacterVisualInEdition has no extractable Transform");
-                                            DumpTypeMembersOnce(cve);
                                         }
                                     }
                                     else
@@ -771,7 +768,6 @@ namespace ParalivesMultiplayer.Session
                             if (modelGuidField != null)
                             {
                                 ulong modelGuid = (ulong)modelGuidField.GetValue(visualData);
-                                Plugin.Log.LogInfo($"[Paramulti] AssetCharacterVisual.Data.CurrentCharacterModelGUID={modelGuid:X}");
 
                                 if (modelGuid != 0 && ParalivesGameApiResolver.CharacterManagerInstance != null)
                                 {
@@ -784,12 +780,9 @@ namespace ParalivesMultiplayer.Session
                                         var assetChar = getCharMethod.Invoke(charMgr, new object[] { modelGuid });
                                         if (assetChar != null)
                                         {
-                                            Plugin.Log.LogInfo($"[Paramulti] GetCharacterByGUID({modelGuid:X}) = {assetChar.GetType().FullName}");
-
                                             // Get the visual from this AssetCharacter
                                             var visProp = assetChar.GetType().GetProperty("Visual");
                                             var runtimeVisual = visProp?.GetValue(assetChar);
-                                            Plugin.Log.LogInfo($"[Paramulti] AssetCharacter.Visual = {runtimeVisual?.GetType().FullName ?? "null"}");
                                             if (runtimeVisual != null)
                                             {
                                                 var t2 = ExtractTransform(runtimeVisual);
@@ -803,7 +796,6 @@ namespace ParalivesMultiplayer.Session
                                     if (loadedMethod != null)
                                     {
                                         var runtimeVisual = loadedMethod.Invoke(charMgr, new object[] { modelGuid });
-                                        Plugin.Log.LogInfo($"[Paramulti] GetLoadedCharacterVisual({modelGuid:X}) = {runtimeVisual?.GetType().FullName ?? "null"}");
                                         if (runtimeVisual != null)
                                         {
                                             var t2 = ExtractTransform(runtimeVisual);
@@ -811,10 +803,6 @@ namespace ParalivesMultiplayer.Session
                                         }
                                     }
                                 }
-                            }
-                            else
-                            {
-                                Plugin.Log.LogInfo($"[Paramulti] No CurrentCharacterModelGUID field on {dataType.FullName}");
                             }
                         }
                     }
@@ -837,7 +825,6 @@ namespace ParalivesMultiplayer.Session
                                     bool isMatch = ReferenceEquals(visual, obj) || visual == obj;
                                     if (isMatch)
                                     {
-                                        Plugin.Log.LogInfo($"[Paramulti] Found parent AssetCharacter by reference match");
                                         // Try all possible GUID sources on the AssetCharacter
                                         ulong charGUID = 0;
                                         var guidProp = c.GetType().GetProperty("GUID",
@@ -855,14 +842,12 @@ namespace ParalivesMultiplayer.Session
                                                 BindingFlags.NonPublic | BindingFlags.Instance);
                                             if (f2 != null) charGUID = (ulong)f2.GetValue(c);
                                         }
-                                        Plugin.Log.LogInfo($"[Paramulti] AssetCharacter GUID={charGUID:X}");
                                         if (charGUID != 0)
                                         {
                                             var loadedMethod = ParalivesGameApiResolver.GetLoadedCharacterVisualMethod;
                                             if (loadedMethod != null)
                                             {
                                                 var rv = loadedMethod.Invoke(charMgr, new object[] { charGUID });
-                                                Plugin.Log.LogInfo($"[Paramulti] GetLoadedCharacterVisual({charGUID:X}) = {rv?.GetType().FullName ?? "null"}");
                                                 if (rv != null)
                                                 {
                                                     var t2 = ExtractTransform(rv);
@@ -877,12 +862,11 @@ namespace ParalivesMultiplayer.Session
                         }
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Plugin.Log.LogInfo($"[Paramulti] AssetCharacterVisual extraction failed: {ex.Message}");
+                    // AssetCharacterVisual is a data asset — no runtime transform available
                 }
 
-                DumpTypeMembersOnce(obj);
                 return null;
             }
 
@@ -931,89 +915,8 @@ namespace ParalivesMultiplayer.Session
                 catch { }
             }
 
-            // Last-chance diagnostic: dump all members of unknown types once
-            DumpTypeMembersOnce(obj);
-
+            // Unknown type — no transform found
             return null;
-        }
-
-        static void DumpAssetCharacterMembers(object assetCharacter)
-        {
-            if (assetCharacter == null) return;
-            var t = assetCharacter.GetType();
-            try
-            {
-                Plugin.Log.LogInfo($"[Paramulti] DUMP AssetCharacter type={t.FullName}:");
-                foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                {
-                    try
-                    {
-                        var v = p.GetValue(assetCharacter);
-                        Plugin.Log.LogInfo($"[Paramulti]   prop {p.Name}: {v?.GetType().Name ?? "null"} = {v?.ToString() ?? "null"}");
-                    }
-                    catch { }
-                }
-                foreach (var f in t.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic))
-                {
-                    try
-                    {
-                        var v = f.GetValue(assetCharacter);
-                        Plugin.Log.LogInfo($"[Paramulti]   field {f.Name}: {v?.GetType().Name ?? "null"} = {v?.ToString() ?? "null"}");
-                    }
-                    catch { }
-                }
-
-                // Also dump the Visual if present
-                var visualProp = t.GetProperty("Visual");
-                if (visualProp != null)
-                {
-                    var visual = visualProp.GetValue(assetCharacter);
-                    if (visual != null)
-                    {
-                        DumpTypeMembersOnce(visual);
-                    }
-                }
-
-                // Also dump the Data if present
-                var dataProp2 = t.GetProperty("Data");
-                if (dataProp2 != null)
-                {
-                    var data = dataProp2.GetValue(assetCharacter);
-                    if (data != null)
-                    {
-                        DumpTypeMembersOnce(data);
-                    }
-                }
-            }
-            catch { }
-        }
-
-        static HashSet<string> _dumpedTypes = new HashSet<string>();
-        static object _dumpLock = new object();
-
-        static void DumpTypeMembersOnce(object obj)
-        {
-            if (obj == null) return;
-            var t = obj.GetType();
-            lock (_dumpLock)
-            {
-                if (_dumpedTypes.Contains(t.FullName)) return;
-                _dumpedTypes.Add(t.FullName);
-            }
-
-            try
-            {
-                Plugin.Log.LogInfo($"[Paramulti] Dumping type {t.FullName} members:");
-                foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                {
-                    try { var v = p.GetValue(obj); Plugin.Log.LogInfo($"[Paramulti]   prop {p.Name}: {v?.GetType().Name ?? "null"} = {v?.ToString() ?? "null"}"); } catch { }
-                }
-                foreach (var f in t.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic))
-                {
-                    try { var v = f.GetValue(obj); Plugin.Log.LogInfo($"[Paramulti]   field {f.Name}: {v?.GetType().Name ?? "null"} = {v?.ToString() ?? "null"}"); } catch { }
-                }
-            }
-            catch { }
         }
 
         static void DestroyGameObject(GameObject go)
