@@ -523,6 +523,7 @@ namespace ParalivesMultiplayer
             if (net == null) return;
 
             DesyncDetector.BuildHeartbeat(out var hb);
+            Log.LogInfo($"[HeartbeatDebug] Sending heartbeat: playerId={hb.PlayerId}, tick={hb.Tick}, seq={hb.SequenceNumber}, ts={hb.TimestampMs}, isHost={net.IsHost}");
             if (net.IsHost)
                 net.SendToAllClients(hb);
             else

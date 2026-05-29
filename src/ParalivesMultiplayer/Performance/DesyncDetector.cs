@@ -43,6 +43,7 @@ namespace ParalivesMultiplayer.Performance
 
         public static void ProcessHeartbeat(MsgHeartbeat hb)
         {
+            Plugin.Log.LogInfo($"[HeartbeatDebug] ProcessHeartbeat received: playerId={hb.PlayerId}, tick={hb.Tick}, seq={hb.SequenceNumber}, ts={hb.TimestampMs}, localTick={MultiplayerSession.Tick}");
             lock (_lock)
             {
                 if (!_players.TryGetValue(hb.PlayerId, out var state))
@@ -56,6 +57,7 @@ namespace ParalivesMultiplayer.Performance
                         MissedHeartbeats = 0
                     };
                     _players[hb.PlayerId] = state;
+                    Plugin.Log.LogInfo($"[HeartbeatDebug] ProcessHeartbeat: created new state for player {hb.PlayerId}");
                 }
 
                 state.LastTick = hb.Tick;

@@ -670,6 +670,7 @@ namespace ParalivesMultiplayer.Networking
                     break;
 
                 case MsgHeartbeat hb:
+                    Log($"[Net] HandleMessage MsgHeartbeat: sender={msg.SenderClientId}, playerId={hb.PlayerId}, tick={hb.Tick}");
                     DesyncDetector.ProcessHeartbeat(hb);
                     if (IsHost)
                         SendToAllExcept(msg.SenderClientId, hb);
