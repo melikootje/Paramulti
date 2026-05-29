@@ -399,7 +399,9 @@ namespace ParalivesMultiplayer
 
             MultiplayerSession.PlayerJoined += (id, name) =>
             {
-                DesyncDetector.RegisterPlayer(id);
+                // Don't register the local player with DesyncDetector - it doesn't send heartbeats to itself
+                if (id != MultiplayerSession.LocalPlayerId)
+                    DesyncDetector.RegisterPlayer(id);
                 InputRouter.RegisterRemotePlayer(id);
                 BuildSyncManager.RegisterPlayer(id);
                 Session.PlayerSyncManager.RegisterPlayer(id);
@@ -409,7 +411,8 @@ namespace ParalivesMultiplayer
 
             MultiplayerSession.PlayerLeft += (id) =>
             {
-                DesyncDetector.UnregisterPlayer(id);
+                if (id != MultiplayerSession.LocalPlayerId)
+                    DesyncDetector.UnregisterPlayer(id);
                 InputRouter.UnregisterRemotePlayer(id);
                 BuildSyncManager.UnregisterPlayer(id);
                 Session.PlayerSyncManager.UnregisterPlayer(id);
