@@ -228,6 +228,8 @@ namespace ParalivesMultiplayer
         static float _lastLocalCaptureTime;
         const float LocalCaptureInterval = 0.05f;
 
+        static bool _gameSceneLoaded;
+
         public static void OnGameUpdate()
         {
             MainThreadQueue.Drain();
@@ -237,10 +239,17 @@ namespace ParalivesMultiplayer
 
             if (MultiplayerSession.IsActive)
             {
-                if (!Session.RemoteCharacterManager.HasLocalCharacter)
+                if (!_gameSceneLoaded && ParalivesGameApiResolver.CharacterManagerInstance != null)
+                {
+                    _gameSceneLoaded = true;
+                    Log.LogInfo("[Paramulti] Game scene detected (CharacterManager instance available)");
+                }
+
+                if (_gameSceneLoaded && !Session.RemoteCharacterManager.HasLocalCharacter)
                     Session.RemoteCharacterManager.FindLocalCharacter();
 
-                CaptureAndSendLocalState();
+                if (_gameSceneLoaded)
+                    CaptureAndSendLocalState();
 
                 DesyncDetector.TickCheck();
                 InputRouter.UpdateDecay();
@@ -319,8 +328,6 @@ namespace ParalivesMultiplayer
             SceneManagementPatches.Apply(harmony);
             GameLifecyclePatches.Apply(harmony);
             PlayerStatePatches.Apply(harmony);
-            CharacterSelectionPatches.Apply(harmony);
-            GameSavingPatches.Apply(harmony);
             BuildModePatches.Apply(harmony);
             GameLoopPatches.Apply(harmony);
 
@@ -484,6 +491,7 @@ namespace ParalivesMultiplayer
 
             MultiplayerSession.OnSessionEnded += () =>
             {
+                _gameSceneLoaded = false;
                 Session.RemoteCharacterManager.OnSessionEnd();
                 Session.CharacterOwnershipManager.ClearAll();
                 Session.HouseholdSyncManager.ClearAll();
