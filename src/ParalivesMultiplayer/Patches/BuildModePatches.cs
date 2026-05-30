@@ -29,7 +29,7 @@ namespace ParalivesMultiplayer.Patches
             try
             {
                 Type buildMgrType = null;
-                string[] candidateNames = { "BuildManager", "Builder", "ConstructionManager", "EditModeController" };
+                string[] candidateNames = { "BuildManager", "Builder", "ConstructionManager", "EditModeController", "BuildModeManager", "PlacementManager", "ObjectPlacementManager" };
 
                 foreach (var candidate in candidateNames)
                 {
@@ -37,11 +37,21 @@ namespace ParalivesMultiplayer.Patches
                     if (buildMgrType != null) break;
                 }
 
-                if (buildMgrType == null)
+                // Validate: the type must have at least one expected method to be considered the build manager
+                if (buildMgrType != null)
                 {
-                    buildMgrType = ParalivesGameApiResolver.FindTypeByPartialName("Build");
-                    if (buildMgrType != null)
-                        PatchLogger.Log($"BuildManager exact type not found, using partial match: {buildMgrType.FullName}");
+                    bool hasAnyMethod = false;
+                    string[] checkMethods = { "PlaceObject", "RemoveObject", "OnObjectPlaced", "OnObjectRemoved", "Place", "Destroy", "AddObject", "DeleteObject", "ToggleMode", "SetMode", "EnterEditMode" };
+                    foreach (var m in checkMethods)
+                    {
+                        if (buildMgrType.GetMethod(m, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance) != null)
+                        { hasAnyMethod = true; break; }
+                    }
+                    if (!hasAnyMethod)
+                    {
+                        PatchLogger.Log($"BuildManager candidate {buildMgrType.FullName} has no expected methods, discarding.");
+                        buildMgrType = null;
+                    }
                 }
 
                 if (buildMgrType == null)
@@ -50,46 +60,57 @@ namespace ParalivesMultiplayer.Patches
                     return;
                 }
 
+                int patchedCount = 0;
                 string[] methodNames = { "PlaceObject", "RemoveObject", "OnObjectPlaced", "OnObjectRemoved", "Place", "Destroy", "AddObject", "DeleteObject" };
 
                 foreach (var methodName in methodNames)
                 {
-                    var method = AccessTools.Method(buildMgrType, methodName);
+                    var method = buildMgrType.GetMethod(methodName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
                     if (method != null)
                     {
                         PatchLogger.SafePatch(harmony, method,
                             new HarmonyMethod(typeof(BuildModePatches), nameof(BuildActionPostfix)),
                             $"BuildManager.{methodName}");
+                        patchedCount++;
                     }
                 }
 
-                var toggleMethod = AccessTools.Method(buildMgrType, "ToggleMode");
+                var toggleMethod = buildMgrType.GetMethod("ToggleMode", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
                 if (toggleMethod == null)
-                    toggleMethod = AccessTools.Method(buildMgrType, "SetMode");
+                    toggleMethod = buildMgrType.GetMethod("SetMode", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
                 if (toggleMethod == null)
-                    toggleMethod = AccessTools.Method(buildMgrType, "EnterEditMode");
+                    toggleMethod = buildMgrType.GetMethod("EnterEditMode", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
 
                 if (toggleMethod != null)
                 {
                     PatchLogger.SafePatch(harmony, toggleMethod,
                         new HarmonyMethod(typeof(BuildModePatches), nameof(BuildModeTogglePostfix)),
                         $"BuildManager.{toggleMethod.Name}");
+                    patchedCount++;
                 }
 
-                var isBuildModeProp = AccessTools.Property(buildMgrType, "IsBuildMode");
+                var isBuildModeProp = buildMgrType.GetProperty("IsBuildMode", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
                 if (isBuildModeProp == null)
-                    isBuildModeProp = AccessTools.Property(buildMgrType, "EditMode");
+                    isBuildModeProp = buildMgrType.GetProperty("EditMode", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
                 if (isBuildModeProp == null)
-                    isBuildModeProp = AccessTools.Property(buildMgrType, "IsEditing");
+                    isBuildModeProp = buildMgrType.GetProperty("IsEditing", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
 
                 if (isBuildModeProp != null)
                 {
-                    PatchLogger.SafePatch(harmony, AccessTools.PropertyGetter(buildMgrType, isBuildModeProp.Name),
-                        new HarmonyMethod(typeof(BuildModePatches), nameof(IsBuildModeGetterPostfix)),
-                        $"BuildManager.{isBuildModeProp.Name}.get");
+                    var getter = isBuildModeProp.GetGetMethod(true);
+                    if (getter != null)
+                    {
+                        PatchLogger.SafePatch(harmony, getter,
+                            new HarmonyMethod(typeof(BuildModePatches), nameof(IsBuildModeGetterPostfix)),
+                            $"BuildManager.{isBuildModeProp.Name}.get");
+                        patchedCount++;
+                    }
                 }
 
-                PatchLogger.Log($"Patched BuildManager: {buildMgrType.FullName}");
+                if (patchedCount > 0)
+                    PatchLogger.Log($"Patched BuildManager: {buildMgrType.FullName} ({patchedCount} patches)");
+                else
+                    PatchLogger.LogWarning($"BuildManager found ({buildMgrType.FullName}) but no patchable methods detected.");
             }
             catch (Exception ex)
             {
@@ -102,7 +123,7 @@ namespace ParalivesMultiplayer.Patches
             try
             {
                 Type buildObjType = null;
-                string[] candidates = { "BuildableObject", "ConstructibleObject", "PlaceableObject" };
+                string[] candidates = { "BuildableObject", "ConstructibleObject", "PlaceableObject", "BuildObject", "PlacedObject", "FurnitureObject" };
 
                 foreach (var candidate in candidates)
                 {
@@ -116,33 +137,40 @@ namespace ParalivesMultiplayer.Patches
                     return;
                 }
 
-                var onPlace = AccessTools.Method(buildObjType, "OnPlace");
+                int patchedCount = 0;
+                var onPlace = buildObjType.GetMethod("OnPlace", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (onPlace != null)
                 {
                     PatchLogger.SafePatch(harmony, onPlace,
                         new HarmonyMethod(typeof(BuildModePatches), nameof(ObjectPlacedPostfix)),
                         $"BuildableObject.OnPlace");
+                    patchedCount++;
                 }
 
-                var onDestroy = AccessTools.Method(buildObjType, "OnDestroy");
+                var onDestroy = buildObjType.GetMethod("OnDestroy", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (onDestroy != null)
                 {
                     PatchLogger.SafePatch(harmony, onDestroy,
                         new HarmonyMethod(typeof(BuildModePatches), nameof(ObjectDestroyedPostfix)),
                         $"BuildableObject.OnDestroy");
+                    patchedCount++;
                 }
 
-                var onTransformChanged = AccessTools.Method(buildObjType, "OnTransformChanged");
+                var onTransformChanged = buildObjType.GetMethod("OnTransformChanged", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (onTransformChanged == null)
-                    onTransformChanged = AccessTools.Method(buildObjType, "UpdateTransform");
+                    onTransformChanged = buildObjType.GetMethod("UpdateTransform", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (onTransformChanged != null)
                 {
                     PatchLogger.SafePatch(harmony, onTransformChanged,
                         new HarmonyMethod(typeof(BuildModePatches), nameof(ObjectTransformChangedPostfix)),
                         $"BuildableObject.{onTransformChanged.Name}");
+                    patchedCount++;
                 }
 
-                PatchLogger.Log($"Patched BuildableObject: {buildObjType.FullName}");
+                if (patchedCount > 0)
+                    PatchLogger.Log($"Patched BuildableObject: {buildObjType.FullName} ({patchedCount} patches)");
+                else
+                    PatchLogger.LogWarning($"BuildableObject found ({buildObjType.FullName}) but no patchable methods detected.");
             }
             catch (Exception ex)
             {
@@ -155,7 +183,7 @@ namespace ParalivesMultiplayer.Patches
             try
             {
                 Type placementType = null;
-                string[] candidates = { "ObjectPlacer", "PlacementSystem", "GridPlacer" };
+                string[] candidates = { "ObjectPlacer", "PlacementSystem", "GridPlacer", "PlacementManager", "BuildPlacement" };
 
                 foreach (var candidate in candidates)
                 {
@@ -169,15 +197,18 @@ namespace ParalivesMultiplayer.Patches
                     return;
                 }
 
-                var placeMethod = AccessTools.Method(placementType, "Place");
+                var placeMethod = placementType.GetMethod("Place", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (placeMethod != null)
                 {
                     PatchLogger.SafePatch(harmony, placeMethod,
                         new HarmonyMethod(typeof(BuildModePatches), nameof(PlacementPostfix)),
                         $"ObjectPlacer.Place");
+                    PatchLogger.Log($"Patched ObjectPlacer: {placementType.FullName}");
                 }
-
-                PatchLogger.Log($"Patched ObjectPlacer: {placementType.FullName}");
+                else
+                {
+                    PatchLogger.LogWarning($"ObjectPlacer found ({placementType.FullName}) but no Place method detected.");
+                }
             }
             catch (Exception ex)
             {

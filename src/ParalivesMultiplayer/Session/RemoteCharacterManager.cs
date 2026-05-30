@@ -975,27 +975,49 @@ namespace ParalivesMultiplayer.Session
         {
             try
             {
-                if (ParalivesGameApiResolver.CharacterManagerInstance == null) return null;
+                if (ParalivesGameApiResolver.CharacterManagerInstance == null)
+                {
+                    Plugin.Log.LogWarning("[Paramulti] BuildLocalCharacterDataSync: CharacterManager instance is null");
+                    return null;
+                }
+
                 var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
                 var cmType = ParalivesGameApiResolver.CharacterManagerType;
                 var charsProp = cmType.GetProperty("Characters");
-                if (charsProp == null) return null;
+                if (charsProp == null)
+                {
+                    Plugin.Log.LogWarning("[Paramulti] BuildLocalCharacterDataSync: Characters property not found");
+                    return null;
+                }
+
                 var chars = charsProp.GetValue(charMgr) as System.Collections.IList;
-                if (chars == null) return null;
+                if (chars == null)
+                {
+                    Plugin.Log.LogWarning("[Paramulti] BuildLocalCharacterDataSync: Characters list is null");
+                    return null;
+                }
+
+                Plugin.Log.LogInfo($"[Paramulti] BuildLocalCharacterDataSync: scanning {chars.Count} characters for transform match...");
 
                 foreach (var c in chars)
                 {
                     var visualProp = c.GetType().GetProperty("Visual");
                     var visual = visualProp?.GetValue(c);
                     var t = ExtractTransform(visual);
-                    if (t != _localCharacterTransform) continue;
+                    bool match = t == _localCharacterTransform;
+                    Plugin.Log.LogDebug($"[Paramulti]   char visual transform: {t?.name ?? "null"}, match={match}");
+                    if (!match) continue;
 
                     var guidProp = c.GetType().GetProperty("GUID");
                     var guid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
 
                     var dataProp = c.GetType().GetProperty("Data");
                     var data = dataProp?.GetValue(c);
-                    if (data == null) return null;
+                    if (data == null)
+                    {
+                        Plugin.Log.LogWarning("[Paramulti] BuildLocalCharacterDataSync: matched character but Data is null, using fallback");
+                        return BuildFallbackCharacterDataSync(guid);
+                    }
 
                     var dataType = data.GetType();
                     var firstNameField = dataType.GetField("FirstName");
@@ -1024,12 +1046,53 @@ namespace ParalivesMultiplayer.Session
                     Plugin.Log.LogInfo($"[Paramulti] Built local character data sync: GUID={guid:X}, Name={msg.FullName}, Model={msg.CharacterModelGuid:X}");
                     return msg;
                 }
+
+                // Fallback: no character in the list matched our local transform, but we have a transform
+                if (_localCharacterTransform != null)
+                {
+                    Plugin.Log.LogWarning("[Paramulti] BuildLocalCharacterDataSync: no CharacterManager character matched local transform, using fallback");
+                    return BuildFallbackCharacterDataSync(0);
+                }
+
+                Plugin.Log.LogWarning("[Paramulti] BuildLocalCharacterDataSync: no local character transform available");
             }
             catch (Exception ex)
             {
                 Plugin.Log.LogError($"[Paramulti] BuildLocalCharacterDataSync error: {ex.Message}");
             }
             return null;
+        }
+
+        static ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync BuildFallbackCharacterDataSync(ulong guid)
+        {
+            if (_localCharacterTransform == null) return null;
+
+            if (guid == 0)
+                guid = GetLocalCharacterGuid();
+            if (guid == 0)
+                guid = GenerateGuidForPlayer(MultiplayerSession.LocalPlayerId);
+
+            var goName = _localCharacterTransform.gameObject?.name ?? "Unknown";
+            var pos = _localCharacterTransform.position.FromUnity();
+            var rot = _localCharacterTransform.rotation.FromUnity();
+
+            var msg = new ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync
+            {
+                PlayerId = MultiplayerSession.LocalPlayerId,
+                CharacterGuid = guid,
+                FirstName = $"Player_{MultiplayerSession.LocalPlayerId}",
+                FullName = $"Player_{MultiplayerSession.LocalPlayerId}",
+                Age = 0f,
+                SpeciesGuid = 0UL,
+                CharacterModelGuid = 0UL,
+                CurrentPostureGuid = 0UL,
+                IsDeadOrTakenAway = false,
+                LastKnownPosition = pos,
+                LastKnownRotation = rot
+            };
+
+            Plugin.Log.LogInfo($"[Paramulti] Built FALLBACK character data sync: GUID={guid:X}, Name={msg.FullName}, transform={goName}, pos={pos}");
+            return msg;
         }
 
         public static void ApplyRemoteCharacterDataSync(ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync msg)

@@ -253,6 +253,9 @@ namespace ParalivesMultiplayer
             {
                 MultiplayerSession.IncrementTick();
 
+                // Continuously resolve game API singletons — they may become available after plugin init
+                ParalivesGameApiResolver.Resolve();
+
                 if (!_gameSceneLoaded && ParalivesGameApiResolver.CharacterManagerInstance != null)
                 {
                     _gameSceneLoaded = true;
@@ -261,6 +264,18 @@ namespace ParalivesMultiplayer
 
                 if (_gameSceneLoaded && !Session.RemoteCharacterManager.HasLocalCharacter)
                     Session.RemoteCharacterManager.FindLocalCharacter();
+
+                // Also try finding local character even before "game scene" flag if managers are available
+                if (!_gameSceneLoaded && ParalivesGameApiResolver.CharacterManagerInstance != null &&
+                    !Session.RemoteCharacterManager.HasLocalCharacter)
+                {
+                    Session.RemoteCharacterManager.FindLocalCharacter();
+                    if (Session.RemoteCharacterManager.HasLocalCharacter)
+                    {
+                        _gameSceneLoaded = true;
+                        Log.LogInfo("[Paramulti] Game scene detected (local character found)");
+                    }
+                }
 
                 if (_gameSceneLoaded)
                     CaptureAndSendLocalState();
