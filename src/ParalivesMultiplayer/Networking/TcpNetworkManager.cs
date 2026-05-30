@@ -59,6 +59,7 @@ namespace ParalivesMultiplayer.Networking
 
         CancellationTokenSource _stopNetwork;
         CancellationTokenSource _stopHostAcceptor;
+        TcpListener _listener;
         ClientSession _hostSession;
 
         public event Action<string> OnStatusChanged;
@@ -96,18 +97,17 @@ namespace ParalivesMultiplayer.Networking
 
         void HostAcceptor(int port)
         {
-            TcpListener listener = null;
             try
             {
-                listener = new TcpListener(IPAddress.Any, port);
-                listener.Start();
+                _listener = new TcpListener(IPAddress.Any, port);
+                _listener.Start();
                 Log($"[Net] Listening on port {port}");
 
                 while (!_stopNetwork.IsCancellationRequested && !_stopHostAcceptor.IsCancellationRequested)
                 {
                     try
                     {
-                        var client = listener.AcceptTcpClient();
+                        var client = _listener.AcceptTcpClient();
                         AcceptClient(client);
                     }
                     catch (ObjectDisposedException)
@@ -128,7 +128,8 @@ namespace ParalivesMultiplayer.Networking
             }
             finally
             {
-                try { listener?.Stop(); } catch { }
+                try { _listener?.Stop(); } catch { }
+                _listener = null;
                 Log("[Net] Host acceptor stopped.");
             }
         }
@@ -850,6 +851,9 @@ namespace ParalivesMultiplayer.Networking
 
             Log("[Net] Shutting down...");
 
+            // Stop the listener first to unblock AcceptTcpClient() and release the port immediately
+            try { _listener?.Stop(); } catch { }
+
             _stopHostAcceptor?.Cancel();
             _stopNetwork.Cancel();
 
@@ -871,6 +875,7 @@ namespace ParalivesMultiplayer.Networking
             IsHost = false;
             _stopNetwork = null;
             _stopHostAcceptor = null;
+            _listener = null;
             Log("[Net] Shutdown complete.");
         }
 
