@@ -100,7 +100,7 @@ namespace ParalivesMultiplayer.UI
 
         public static void Draw()
         {
-            if (!_initialized) return;
+            if (!_initialized) Initialize();
 
             var net = ParalivesMultiplayer.Networking.TcpNetworkManager.Instance;
             if (net == null || !ParalivesMultiplayer.Session.MultiplayerSession.IsActive)

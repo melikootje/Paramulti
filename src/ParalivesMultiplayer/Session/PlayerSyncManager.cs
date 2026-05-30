@@ -93,13 +93,12 @@ namespace ParalivesMultiplayer.Session
             {
                 foreach (var kv in _buffers)
                 {
+                    if (!_proxyRouting.TryGetValue(kv.Key, out var routed) || !routed)
+                        continue;
                     var buf = kv.Value;
                     if (buf.TryGetInterpolatedState(targetTime, out var pos, out var rot))
                     {
-                        if (_proxyRouting.TryGetValue(kv.Key, out var routed) && routed)
-                        {
-                            OnRemotePlayerRender?.Invoke(kv.Key, pos, rot);
-                        }
+                        OnRemotePlayerRender?.Invoke(kv.Key, pos, rot);
                     }
                 }
             }
@@ -186,9 +185,9 @@ namespace ParalivesMultiplayer.Session
 
             if (!hasNext)
             {
-                if (Time.time - prev.Timestamp > 0.5f)
+                if (Time.time - prev.Timestamp > PlayerSyncManager.ExtrapolationLimitSec)
                 {
-                    Plugin.Log.LogWarning($"[Paramulti] Extrapolation limit exceeded");
+                    Plugin.Log.LogDebug($"[Paramulti] Extrapolation limit exceeded");
                     return false;
                 }
                 position = prev.Position + prev.Velocity * (targetTime - prev.Timestamp);
