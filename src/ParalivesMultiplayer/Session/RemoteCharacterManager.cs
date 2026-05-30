@@ -572,32 +572,42 @@ namespace ParalivesMultiplayer.Session
                 var mesh = new Mesh();
                 mesh.name = "RemotePlayerProxy";
 
-                Vector3[] vertices = new Vector3[8];
-                int[] triangles = new int[36];
+                // Large human-sized box: 1.5 wide, 2.5 tall, 1.5 deep
+                float w = 0.75f, h = 1.25f, d = 0.75f;
 
-                float r = 0.4f, h = 1.0f;
-                float[] angles = new float[] { 0f, Mathf.PI / 2f, Mathf.PI, Mathf.PI * 3f / 2f };
+                // 8 corners of the box
+                var vertices = new Vector3[8];
+                vertices[0] = new Vector3(-w, 0f, -d);  // bottom-back-left
+                vertices[1] = new Vector3(w, 0f, -d);   // bottom-back-right
+                vertices[2] = new Vector3(-w, h, -d);   // top-back-left
+                vertices[3] = new Vector3(w, h, -d);    // top-back-right
+                vertices[4] = new Vector3(-w, 0f, d);   // bottom-front-left
+                vertices[5] = new Vector3(w, 0f, d);    // bottom-front-right
+                vertices[6] = new Vector3(-w, h, d);    // top-front-left
+                vertices[7] = new Vector3(w, h, d);     // top-front-right
 
-                for (int i = 0; i < 4; i++)
+                // 12 triangles (6 faces * 2), counter-clockwise winding from outside
+                var triangles = new int[]
                 {
-                    float a = angles[i];
-                    vertices[i] = new Vector3(Mathf.Cos(a) * r, -h, Mathf.Sin(a) * r);
-                    vertices[i + 4] = new Vector3(Mathf.Cos(a) * r, h, Mathf.Sin(a) * r);
-                }
-
-                int[] order = { 0, 1, 2, 3 };
-                for (int i = 0; i < 4; i++)
-                {
-                    int next = (i + 1) % 4;
-                    int baseIdx = i * 6;
-
-                    triangles[baseIdx] = order[i];
-                    triangles[baseIdx + 1] = next;
-                    triangles[baseIdx + 2] = next + 4;
-                    triangles[baseIdx + 3] = order[i];
-                    triangles[baseIdx + 4] = next + 4;
-                    triangles[baseIdx + 5] = order[i] + 4;
-                }
+                    // Front face (Z+)
+                    4, 5, 7,
+                    4, 7, 6,
+                    // Back face (Z-)
+                    1, 0, 2,
+                    1, 2, 3,
+                    // Right face (X+)
+                    5, 1, 3,
+                    5, 3, 7,
+                    // Left face (X-)
+                    0, 4, 6,
+                    0, 6, 2,
+                    // Top face (Y+)
+                    6, 7, 3,
+                    6, 3, 2,
+                    // Bottom face (Y-)
+                    0, 1, 5,
+                    0, 5, 4
+                };
 
                 mesh.vertices = vertices;
                 mesh.triangles = triangles;
