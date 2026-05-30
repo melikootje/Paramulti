@@ -453,7 +453,8 @@ namespace ParalivesMultiplayer.Session
                 transform.rotation = Quaternion.identity;
 
                 StripInputComponents(transform);
-                AttachDebugMarker(go, playerId);
+                AttachDebugMarker(go, playerId, playerName);
+                ApplyGhostMaterial(go, playerId);
 
                 Plugin.Log.LogInfo($"[Paramulti] Created prefab clone for player {playerId}: {go.name} at {spawnPos}");
 
@@ -525,7 +526,8 @@ namespace ParalivesMultiplayer.Session
                 }
 
                 StripInputComponents(transform);
-                AttachDebugMarker(go, playerId);
+                AttachDebugMarker(go, playerId, playerName);
+                ApplyGhostMaterial(go, playerId);
 
                 Plugin.Log.LogInfo($"[Paramulti] Created fallback proxy for player {playerId}: {go.name} at {spawnPos}");
 
@@ -604,14 +606,15 @@ namespace ParalivesMultiplayer.Session
             return colors[playerId % colors.Length];
         }
 
-        static void AttachDebugMarker(GameObject parent, int playerId)
+        static void AttachDebugMarker(GameObject parent, int playerId, string playerName)
         {
             try
             {
+                // Small colored indicator above head
                 var marker = new GameObject($"[DebugMarker:{playerId}]");
                 marker.transform.SetParent(parent.transform, false);
-                marker.transform.localPosition = new Vector3(0f, 1.8f, 0f);
-                marker.transform.localScale = new Vector3(0.3f, 0.3f, 0.3f);
+                marker.transform.localPosition = new Vector3(0f, 2.1f, 0f);
+                marker.transform.localScale = new Vector3(0.15f, 0.15f, 0.15f);
 
                 var filter = marker.AddComponent<MeshFilter>();
                 filter.mesh = CreateDebugSphereMesh();
@@ -623,14 +626,10 @@ namespace ParalivesMultiplayer.Session
                 mat.color = GetPlayerColor(playerId);
                 renderer.material = mat;
 
-                // Add a point light to make it glow
-                var light = marker.AddComponent<Light>();
-                light.color = GetPlayerColor(playerId);
-                light.range = 5f;
-                light.intensity = 2f;
-                light.type = LightType.Point;
+                // Floating nameplate
+                AttachNameplate(parent, playerId, playerName);
 
-                Plugin.Log.LogInfo($"[Paramulti] Attached debug marker to remote player {playerId} proxy");
+                Plugin.Log.LogInfo($"[Paramulti] Attached debug marker + nameplate to remote player {playerId} proxy");
             }
             catch (Exception ex)
             {
@@ -638,9 +637,77 @@ namespace ParalivesMultiplayer.Session
             }
         }
 
+        static void AttachNameplate(GameObject parent, int playerId, string playerName)
+        {
+            try
+            {
+                var npGo = new GameObject($"[Nameplate:{playerId}]");
+                npGo.transform.SetParent(parent.transform, false);
+                npGo.transform.localPosition = new Vector3(0f, 2.3f, 0f);
+
+                // Billboard script to always face camera
+                var billboard = npGo.AddComponent<NameplateBillboard>();
+                billboard.PlayerName = playerName;
+                billboard.Color = GetPlayerColor(playerId);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] Nameplate failed for player {playerId}: {ex.Message}");
+            }
+        }
+
+        static void ApplyGhostMaterial(GameObject root, int playerId)
+        {
+            try
+            {
+                var color = GetPlayerColor(playerId);
+                var shader = Shader.Find("Standard");
+                if (shader == null) shader = Shader.Find("Diffuse");
+                if (shader == null) shader = Shader.Find("Mobile/Diffuse");
+                if (shader == null) return;
+
+                var ghostMat = new Material(shader);
+                ghostMat.color = new Color(color.r, color.g, color.b, 0.35f);
+                // Enable transparency if Standard shader
+                if (shader.name == "Standard")
+                {
+                    ghostMat.SetFloat("_Mode", 3f); // Transparent mode
+                    ghostMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    ghostMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    ghostMat.SetInt("_ZWrite", 0);
+                    ghostMat.DisableKeyword("_ALPHATEST_ON");
+                    ghostMat.EnableKeyword("_ALPHABLEND_ON");
+                    ghostMat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+                    ghostMat.renderQueue = 3000;
+                }
+
+                var renderers = root.GetComponentsInChildren<MeshRenderer>(true);
+                foreach (var rend in renderers)
+                {
+                    if (rend == null) continue;
+                    // Don't ghost the debug marker itself
+                    if (rend.gameObject.name.StartsWith("[DebugMarker")) continue;
+                    if (rend.gameObject.name.StartsWith("[Nameplate")) continue;
+                    rend.material = ghostMat;
+                }
+
+                var skinnedRenderers = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+                foreach (var rend in skinnedRenderers)
+                {
+                    if (rend == null) continue;
+                    rend.material = ghostMat;
+                }
+
+                Plugin.Log.LogInfo($"[Paramulti] Applied ghost material to remote player {playerId} proxy ({renderers.Length} mesh, {skinnedRenderers.Length} skinned)");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] Ghost material failed for player {playerId}: {ex.Message}");
+            }
+        }
+
         static Mesh CreateDebugSphereMesh()
         {
-            // Simple icosahedron-ish sphere
             var mesh = new Mesh();
             mesh.name = "DebugSphere";
             var verts = new Vector3[12];
@@ -744,6 +811,15 @@ namespace ParalivesMultiplayer.Session
                 }
             }
             return false;
+        }
+
+        public static RemoteCharacterEntry GetRemoteCharacterEntry(int playerId)
+        {
+            lock (_lock)
+            {
+                _remoteCharacters.TryGetValue(playerId, out var entry);
+                return entry;
+            }
         }
 
         public static void ApplyRemoteState(int playerId, Vector3 position, Quaternion rotation)
@@ -1179,7 +1255,8 @@ namespace ParalivesMultiplayer.Session
                 // Fallback: no character in the list matched our local transform, but we have a transform
                 if (_localCharacterTransform != null)
                 {
-                    Plugin.Log.LogWarning("[Paramulti] BuildLocalCharacterDataSync: no CharacterManager character matched local transform, using fallback");
+                    // In live world the camera-follow transform often won't match CharacterManager entries
+                    Plugin.Log.LogInfo("[Paramulti] BuildLocalCharacterDataSync: using fallback (camera-follow transform not in CharacterManager list)");
                     return BuildFallbackCharacterDataSync(0);
                 }
 

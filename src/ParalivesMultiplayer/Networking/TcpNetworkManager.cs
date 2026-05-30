@@ -607,8 +607,16 @@ namespace ParalivesMultiplayer.Networking
 
                 case MsgCursorPing ping:
                     LogDebug($"[Net] CursorPing from player {ping.PlayerId} at {ping.Position}");
+                    Session.BuildCursorSyncManager.ReceiveCursorPing(ping);
                     if (IsHost)
                         SendToAllExcept(msg.SenderClientId, ping);
+                    break;
+
+                case MsgAnimationState anim:
+                    LogDebug($"[Net] AnimationState from player {anim.PlayerId}: hash={anim.AnimatorStateHash}, time={anim.NormalizedTime:F2}");
+                    Session.AnimationSyncManager.ReceiveAnimationState(anim);
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, anim);
                     break;
 
                 case MsgBuildObjectPlaced build:

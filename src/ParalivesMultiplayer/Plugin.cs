@@ -190,6 +190,12 @@ namespace ParalivesMultiplayer
                 Log.LogInfo("[Init] Step 11e: HouseholdSyncManager");
                 Session.HouseholdSyncManager.Initialize();
 
+                Log.LogInfo("[Init] Step 11f: BuildCursorSyncManager");
+                Session.BuildCursorSyncManager.Initialize();
+
+                Log.LogInfo("[Init] Step 11g: AnimationSyncManager");
+                Session.AnimationSyncManager.Initialize();
+
                 Log.LogInfo("[Init] Step 12: Harmony patches");
                 if (EnablePatches)
                 {
@@ -295,6 +301,9 @@ namespace ParalivesMultiplayer
                 InputRouter.UpdateDecay();
                 Session.PlayerSyncManager.Enabled = EnableLivePlayerSync;
                 Session.PlayerSyncManager.Update();
+                Session.BuildCursorSyncManager.Update();
+                Session.BuildCursorSyncManager.UpdateRemoteCursors();
+                Session.AnimationSyncManager.Update();
                 SendHeartbeatIfNeeded();
                 SendPingIfNeeded();
                 ReconnectionManager.CleanExpiredStates();
@@ -569,6 +578,8 @@ namespace ParalivesMultiplayer
                 Session.CharacterOwnershipManager.ClearAll();
                 Session.HouseholdSyncManager.ClearAll();
                 Session.InteractionSyncManager.ClearAll();
+                Session.BuildCursorSyncManager.ClearAll();
+                Session.AnimationSyncManager.ClearAll();
             };
 
             Session.InteractionSyncManager.OnRemoteInteractionRequested += (requesterPlayerId, targetGuid, interactionGuid) =>
