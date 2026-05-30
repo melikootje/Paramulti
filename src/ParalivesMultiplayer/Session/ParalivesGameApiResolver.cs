@@ -11,6 +11,13 @@ namespace ParalivesMultiplayer.Session
         static bool _typesScanned;
         static readonly List<string> _logMessages = new List<string>();
 
+        static bool _loggedCharMgrMissing;
+        static bool _loggedAssetMgrMissing;
+        static bool _loggedPlayerMgrMissing;
+        static bool _loggedHouseholdMgrMissing;
+        static bool _resolutionReported;
+        static float _lastResolutionLogTime = -999f;
+
         public static Type CharacterManagerType { get; private set; }
         public static object CharacterManagerInstance { get; private set; }
         public static MethodInfo LoadCharacterVisualMethod { get; private set; }
@@ -66,14 +73,23 @@ namespace ParalivesMultiplayer.Session
             // Always attempt instance resolution — singletons may not exist at plugin load time
             ResolveInstances();
 
-            // Only log resolution status when it changes (not every frame)
-            bool anyNew = (CharacterManagerType != null && CharacterManagerInstance == null) ||
-                          (AssetManagerType != null && AssetManagerInstance == null) ||
-                          (PlayerManagerType != null && PlayerManagerInstance == null) ||
-                          (HouseholdManagerType != null && HouseholdManagerInstance == null);
-            if (anyNew || !_typesScanned)
+            bool allResolved = CharacterManagerInstance != null && AssetManagerInstance != null &&
+                               PlayerManagerInstance != null && HouseholdManagerInstance != null;
+
+            if (allResolved && !_resolutionReported)
             {
-                Log($"[GameApi] Resolution status: CharacterManager={CharacterManagerInstance != null}, AssetManager={AssetManagerInstance != null}, PlayerManager={PlayerManagerInstance != null}, HouseholdManager={HouseholdManagerInstance != null}");
+                _resolutionReported = true;
+                Log("[GameApi] All manager instances resolved successfully.");
+            }
+            else if (!allResolved && !_resolutionReported)
+            {
+                // Throttle unresolved summary to once every 5 seconds
+                float now = UnityEngine.Time.time;
+                if (now - _lastResolutionLogTime >= 5f)
+                {
+                    _lastResolutionLogTime = now;
+                    Log($"[GameApi] Resolution status: CharacterManager={CharacterManagerInstance != null}, AssetManager={AssetManagerInstance != null}, PlayerManager={PlayerManagerInstance != null}, HouseholdManager={HouseholdManagerInstance != null}");
+                }
             }
         }
 
@@ -82,22 +98,46 @@ namespace ParalivesMultiplayer.Session
             if (CharacterManagerType != null && CharacterManagerInstance == null)
             {
                 CharacterManagerInstance = GetSingletonInstance(CharacterManagerType);
-                Log($"[GameApi] CharacterManager instance: {(CharacterManagerInstance != null ? "found" : "not yet available")}");
+                if (CharacterManagerInstance != null)
+                    Log("[GameApi] CharacterManager instance: found");
+                else if (!_loggedCharMgrMissing)
+                {
+                    _loggedCharMgrMissing = true;
+                    Log("[GameApi] CharacterManager instance: not yet available (will retry)");
+                }
             }
             if (AssetManagerType != null && AssetManagerInstance == null)
             {
                 AssetManagerInstance = GetSingletonInstance(AssetManagerType);
-                Log($"[GameApi] AssetManager instance: {(AssetManagerInstance != null ? "found" : "not yet available")}");
+                if (AssetManagerInstance != null)
+                    Log("[GameApi] AssetManager instance: found");
+                else if (!_loggedAssetMgrMissing)
+                {
+                    _loggedAssetMgrMissing = true;
+                    Log("[GameApi] AssetManager instance: not yet available (will retry)");
+                }
             }
             if (PlayerManagerType != null && PlayerManagerInstance == null)
             {
                 PlayerManagerInstance = GetSingletonInstance(PlayerManagerType);
-                Log($"[GameApi] PlayerManager instance: {(PlayerManagerInstance != null ? "found" : "not yet available")}");
+                if (PlayerManagerInstance != null)
+                    Log("[GameApi] PlayerManager instance: found");
+                else if (!_loggedPlayerMgrMissing)
+                {
+                    _loggedPlayerMgrMissing = true;
+                    Log("[GameApi] PlayerManager instance: not yet available (will retry)");
+                }
             }
             if (HouseholdManagerType != null && HouseholdManagerInstance == null)
             {
                 HouseholdManagerInstance = GetSingletonInstance(HouseholdManagerType);
-                Log($"[GameApi] HouseholdManager instance: {(HouseholdManagerInstance != null ? "found" : "not yet available")}");
+                if (HouseholdManagerInstance != null)
+                    Log("[GameApi] HouseholdManager instance: found");
+                else if (!_loggedHouseholdMgrMissing)
+                {
+                    _loggedHouseholdMgrMissing = true;
+                    Log("[GameApi] HouseholdManager instance: not yet available (will retry)");
+                }
             }
         }
 
@@ -105,25 +145,50 @@ namespace ParalivesMultiplayer.Session
         {
             try
             {
-                var prop = type.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
-                if (prop != null)
+                // Case-insensitive property search
+                foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic))
                 {
-                    var val = prop.GetValue(null);
+                    if (prop.Name.Equals("Instance", StringComparison.OrdinalIgnoreCase) && prop.GetGetMethod(true) != null)
+                    {
+                        var val = prop.GetValue(null);
+                        if (val != null) return val;
+                    }
+                }
+
+                // Case-insensitive field search for common singleton patterns
+                foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic))
+                {
+                    if (field.Name.Equals("Instance", StringComparison.OrdinalIgnoreCase) ||
+                        field.Name.Equals("_instance", StringComparison.OrdinalIgnoreCase) ||
+                        field.Name.Equals("m_Instance", StringComparison.OrdinalIgnoreCase) ||
+                        field.Name.Equals("s_Instance", StringComparison.OrdinalIgnoreCase) ||
+                        field.Name.Equals("instance", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var val = field.GetValue(null);
+                        if (val != null) return val;
+                    }
+                }
+
+                // Auto-generated backing field
+                var backing = type.GetField("<Instance>k__BackingField", BindingFlags.NonPublic | BindingFlags.Static);
+                if (backing != null)
+                {
+                    var val = backing.GetValue(null);
                     if (val != null) return val;
                 }
 
-                var field = type.GetField("Instance", BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
-                if (field != null)
+                // Static method fallback: GetInstance() or Get()
+                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic))
                 {
-                    var val = field.GetValue(null);
-                    if (val != null) return val;
-                }
-
-                field = type.GetField("<Instance>k__BackingField", BindingFlags.NonPublic | BindingFlags.Static);
-                if (field != null)
-                {
-                    var val = field.GetValue(null);
-                    if (val != null) return val;
+                    if (method.Name.Equals("GetInstance", StringComparison.OrdinalIgnoreCase) ||
+                        method.Name.Equals("Get", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (method.GetParameters().Length == 0 && method.ReturnType != typeof(void))
+                        {
+                            var val = method.Invoke(null, null);
+                            if (val != null) return val;
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -297,6 +362,16 @@ namespace ParalivesMultiplayer.Session
 
                         type = asm.GetType(simpleName);
                         if (type != null) return true;
+
+                        // Fallback: scan all exported types by simple name (handles namespaced types)
+                        foreach (var t in asm.GetTypes())
+                        {
+                            if (t.Name == simpleName)
+                            {
+                                type = t;
+                                return true;
+                            }
+                        }
                     }
                     catch
                     {
@@ -308,6 +383,46 @@ namespace ParalivesMultiplayer.Session
                 Log($"[GameApi] TryFindType({fullName}) error: {ex.Message}");
             }
             return false;
+        }
+
+        public static Type FindTypeBySimpleName(string simpleName)
+        {
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    var asmName = asm.GetName().Name;
+                    if (asmName == null) continue;
+                    if (!asmName.Contains("Paralives") && !asmName.Contains("Assembly-CSharp")) continue;
+
+                    foreach (var t in asm.GetTypes())
+                    {
+                        if (t.Name == simpleName) return t;
+                    }
+                }
+                catch { }
+            }
+            return null;
+        }
+
+        public static Type FindTypeByPartialName(string partialName)
+        {
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    var asmName = asm.GetName().Name;
+                    if (asmName == null) continue;
+                    if (!asmName.Contains("Paralives") && !asmName.Contains("Assembly-CSharp")) continue;
+
+                    foreach (var t in asm.GetTypes())
+                    {
+                        if (t.Name.IndexOf(partialName, StringComparison.OrdinalIgnoreCase) >= 0) return t;
+                    }
+                }
+                catch { }
+            }
+            return null;
         }
 
         static MethodInfo FindMethod(Type type, string name)

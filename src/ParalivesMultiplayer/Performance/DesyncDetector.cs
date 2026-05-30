@@ -64,12 +64,13 @@ namespace ParalivesMultiplayer.Performance
                 state.LastTimestampMs = _sw.ElapsedMilliseconds;
                 state.MissedHeartbeats = 0;
 
-                uint tickDrift = (uint)Math.Abs((long)hb.Tick - (long)MultiplayerSession.Tick);
-                if (tickDrift > MaxTickDrift)
+                // Compare received tick delta between heartbeats rather than absolute values
+                // since each machine has its own independent tick counter
+                if (state.LastTick > 0 && hb.Tick >= state.LastTick)
                 {
-                    var reason = $"Tick drift: local={MultiplayerSession.Tick}, remote={hb.Tick}, delta={tickDrift}";
-                    Plugin.Log.LogWarning($"[Desync] {reason} for player {hb.PlayerId}");
-                    OnDesyncDetected?.Invoke(hb.PlayerId, reason);
+                    uint tickDelta = hb.Tick - state.LastTick;
+                    // Expect at least some progress; if delta is 0 for many beats, client may be stuck
+                    // (handled by heartbeat timeout, not tick drift)
                 }
 
                 if (state.LastSequence > 0 && hb.SequenceNumber > state.LastSequence)

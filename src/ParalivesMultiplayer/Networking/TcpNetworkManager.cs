@@ -54,6 +54,7 @@ namespace ParalivesMultiplayer.Networking
 
         readonly Dictionary<int, ClientSession> _sessions = new Dictionary<int, ClientSession>();
         readonly ConcurrentQueue<MessageBase> _receiverQueue = new ConcurrentQueue<MessageBase>();
+        readonly HashSet<int> _loggedFirstReceive = new HashSet<int>();
         static int _nextClientId;
 
         CancellationTokenSource _stopNetwork;
@@ -326,11 +327,17 @@ namespace ParalivesMultiplayer.Networking
                                 decoded.SenderClientId = session.Id;
                                 PacketStats.RecordReceived(totalLength + 5);
                                 _receiverQueue.Enqueue(decoded);
+
+                                bool firstTime = _loggedFirstReceive.Add(session.Id);
+                                if (firstTime)
+                                    Log($"[Net] First message received from session {session.Id}: \"{messageCode}\" ({totalLength + 5} bytes)");
+                                else
+                                    LogDebug($"[Net] Received message \"{messageCode}\" from session {session.Id}");
                             }
                             else
                             {
                                 PacketStats.RecordError();
-                                LogWarning($"[Net] Failed to decode message \"{messageCode}\"");
+                                LogWarning($"[Net] Failed to decode message \"{messageCode}\" ({totalLength + 5} bytes)");
                             }
                         }
                         catch (Exception ex)
@@ -341,7 +348,7 @@ namespace ParalivesMultiplayer.Networking
                     }
                     else
                     {
-                        LogWarning($"[Net] Unknown message type: \"{messageCode}\"");
+                        LogWarning($"[Net] Unknown message type: \"{messageCode}\" ({totalLength + 5} bytes)");
                     }
                 }
             }

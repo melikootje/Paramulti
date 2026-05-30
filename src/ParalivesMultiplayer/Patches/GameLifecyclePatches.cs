@@ -17,19 +17,9 @@ namespace ParalivesMultiplayer.Patches
         {
             try
             {
-                var gameManagerType = null as Type;
-
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    var name = asm.GetName().Name;
-                    if (name == null) continue;
-
-                    if (name.Contains("Paralives") || name.Contains("Assembly-CSharp"))
-                    {
-                        gameManagerType = asm.GetType("GameManager");
-                        if (gameManagerType != null) break;
-                    }
-                }
+                var gameManagerType = ParalivesGameApiResolver.FindTypeBySimpleName("GameManager");
+                if (gameManagerType == null)
+                    gameManagerType = ParalivesGameApiResolver.FindTypeByPartialName("GameManager");
 
                 if (gameManagerType == null)
                 {

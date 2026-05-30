@@ -236,9 +236,14 @@ namespace ParalivesMultiplayer
         const float LocalCaptureInterval = 0.05f;
 
         static bool _gameSceneLoaded;
+        static int _lastProcessedFrame = -1;
 
         public static void OnGameUpdate()
         {
+            int currentFrame = UnityEngine.Time.frameCount;
+            if (currentFrame == _lastProcessedFrame) return;
+            _lastProcessedFrame = currentFrame;
+
             MainThreadQueue.Drain();
             TcpNetworkManager.Instance?.ProcessIncomingMessages();
             CommandHandler.ProcessInput();

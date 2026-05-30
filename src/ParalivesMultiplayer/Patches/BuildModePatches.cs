@@ -31,18 +31,17 @@ namespace ParalivesMultiplayer.Patches
                 Type buildMgrType = null;
                 string[] candidateNames = { "BuildManager", "Builder", "ConstructionManager", "EditModeController" };
 
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                foreach (var candidate in candidateNames)
                 {
-                    var name = asm.GetName().Name;
-                    if (name == null) continue;
-                    if (!name.Contains("Paralives") && !name.Contains("Assembly-CSharp")) continue;
-
-                    foreach (var candidate in candidateNames)
-                    {
-                        buildMgrType = asm.GetType(candidate);
-                        if (buildMgrType != null) break;
-                    }
+                    buildMgrType = ParalivesGameApiResolver.FindTypeBySimpleName(candidate);
                     if (buildMgrType != null) break;
+                }
+
+                if (buildMgrType == null)
+                {
+                    buildMgrType = ParalivesGameApiResolver.FindTypeByPartialName("Build");
+                    if (buildMgrType != null)
+                        PatchLogger.Log($"BuildManager exact type not found, using partial match: {buildMgrType.FullName}");
                 }
 
                 if (buildMgrType == null)
@@ -105,17 +104,9 @@ namespace ParalivesMultiplayer.Patches
                 Type buildObjType = null;
                 string[] candidates = { "BuildableObject", "ConstructibleObject", "PlaceableObject" };
 
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                foreach (var candidate in candidates)
                 {
-                    var name = asm.GetName().Name;
-                    if (name == null) continue;
-                    if (!name.Contains("Paralives") && !name.Contains("Assembly-CSharp")) continue;
-
-                    foreach (var candidate in candidates)
-                    {
-                        buildObjType = asm.GetType(candidate);
-                        if (buildObjType != null) break;
-                    }
+                    buildObjType = ParalivesGameApiResolver.FindTypeBySimpleName(candidate);
                     if (buildObjType != null) break;
                 }
 
@@ -166,17 +157,9 @@ namespace ParalivesMultiplayer.Patches
                 Type placementType = null;
                 string[] candidates = { "ObjectPlacer", "PlacementSystem", "GridPlacer" };
 
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                foreach (var candidate in candidates)
                 {
-                    var name = asm.GetName().Name;
-                    if (name == null) continue;
-                    if (!name.Contains("Paralives") && !name.Contains("Assembly-CSharp")) continue;
-
-                    foreach (var candidate in candidates)
-                    {
-                        placementType = asm.GetType(candidate);
-                        if (placementType != null) break;
-                    }
+                    placementType = ParalivesGameApiResolver.FindTypeBySimpleName(candidate);
                     if (placementType != null) break;
                 }
 

@@ -61,6 +61,17 @@ namespace ParalivesMultiplayer.Patches
                         LogDebug($"Found type: {type.FullName}");
                         return true;
                     }
+
+                    // Fallback: scan all types for simple name match
+                    foreach (var t in a.GetTypes())
+                    {
+                        if (t.Name == typeName)
+                        {
+                            type = t;
+                            LogDebug($"Found type: {type.FullName}");
+                            return true;
+                        }
+                    }
                 }
             }
             catch (Exception ex)

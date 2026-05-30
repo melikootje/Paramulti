@@ -21,17 +21,7 @@ namespace ParalivesMultiplayer.Patches
                 var systemManagerType = ParalivesGameApiResolver.SystemManagerType;
                 if (systemManagerType == null)
                 {
-                    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                    {
-                        var name = asm.GetName().Name;
-                        if (name == null) continue;
-
-                        if (name.Contains("Paralives"))
-                        {
-                            systemManagerType = asm.GetType("SystemManager");
-                            if (systemManagerType != null) break;
-                        }
-                    }
+                    systemManagerType = ParalivesGameApiResolver.FindTypeBySimpleName("SystemManager");
                 }
 
                 if (systemManagerType == null)
