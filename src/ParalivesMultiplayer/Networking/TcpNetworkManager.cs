@@ -549,9 +549,17 @@ namespace ParalivesMultiplayer.Networking
                     Log($"[Net] Disconnect received: {disconnect.Reason}");
                     break;
 
-              case MsgPlayerJoin join:
+                case MsgPlayerJoin join:
                     Log($"[Paramulti][Network] Received MsgPlayerJoin for Player {join.PlayerId} (Name={join.PlayerName}).");
                     MultiplayerSession.OnPlayerJoined(join.PlayerId, join.PlayerName);
+
+                    if (IsHost)
+                    {
+                        // Rebroadcast to all other clients so everyone knows about the new player
+                        SendToAllExcept(msg.SenderClientId, join);
+                        // Send acknowledgment back to the joining client so it triggers character data sync
+                        SendToClient(msg.SenderClientId, join);
+                    }
 
                     // Client sends its own character data upon receiving join acknowledgment
                     if (!IsHost && join.PlayerId == MultiplayerSession.LocalPlayerId)
