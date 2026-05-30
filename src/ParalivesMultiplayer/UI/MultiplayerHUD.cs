@@ -51,6 +51,14 @@ namespace ParalivesMultiplayer.UI
                 inst.OnStatusChanged += OnStatusChanged;
 
             ParalivesMultiplayer.Networking.ChatManager.OnChatMessageReceived += AddChatEntry;
+
+            if (HudRenderer.Instance == null)
+            {
+                var go = new GameObject("MultiplayerHUD_Renderer");
+                UnityEngine.Object.DontDestroyOnLoad(go);
+                go.AddComponent<HudRenderer>();
+            }
+
             _initialized = true;
         }
 
@@ -197,6 +205,31 @@ if (GUI.Button(new Rect(x + 5f, dy, 100f, 20f), ParalivesMultiplayer.Plugin.Enab
                     }
                 }
             }
+        }
+    }
+
+    public class HudRenderer : MonoBehaviour
+    {
+        public static HudRenderer Instance { get; private set; }
+
+        private void Awake()
+        {
+            Instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
+
+        private void Update()
+        {
+            MultiplayerHUD.Update();
+        }
+
+        private void OnGUI()
+        {
+            MultiplayerHUD.Draw();
         }
     }
 }

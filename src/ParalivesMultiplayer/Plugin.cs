@@ -315,11 +315,6 @@ namespace ParalivesMultiplayer
             }
         }
 
-        private void OnGUI()
-        {
-            MultiplayerHUD.Draw();
-        }
-
         private void OnDestroy()
         {
             try { SessionWatchdog.Dispose(); } catch {}
