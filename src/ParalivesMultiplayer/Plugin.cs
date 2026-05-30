@@ -258,7 +258,8 @@ namespace ParalivesMultiplayer
                 if (_gameSceneLoaded)
                     CaptureAndSendLocalState();
 
-                DesyncDetector.TickCheck();
+                if (MultiplayerSession.IsHost)
+                    DesyncDetector.TickCheck();
                 InputRouter.UpdateDecay();
                 Session.PlayerSyncManager.Enabled = EnableLivePlayerSync;
                 Session.PlayerSyncManager.Update();
