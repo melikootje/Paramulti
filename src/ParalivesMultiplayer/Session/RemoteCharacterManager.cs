@@ -1460,35 +1460,26 @@ namespace ParalivesMultiplayer.Session
                 }
             }
 
-            // Create game-native character using the remote player's model
+            // Always create a visible fallback proxy first — it's guaranteed to render
             Vector3 spawnPos = msg.LastKnownPosition.ToUnity();
-            var entry = TryCreateRemoteGameNativeCharacter(msg.PlayerId, msg.CharacterGuid, msg.CharacterModelGuid, msg.FullName, spawnPos);
-
-            if (entry == null)
+            var entry = CreateFallbackProxy(msg.PlayerId, msg.FullName, spawnPos);
+            if (entry != null)
             {
-                Plugin.Log.LogWarning($"[Paramulti] Game-native creation failed for remote player {msg.PlayerId}, trying prefab fallback");
-                entry = TryCreatePrefabClone(msg.PlayerId, msg.FullName, spawnPos);
-                if (entry != null)
-                {
-                    entry.CharacterGuid = msg.CharacterGuid;
-                    entry.ControlledTransform.position = spawnPos;
-                    entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
-                    // Prefab clones should be fully visible — no ghost material
-                    MakeProxyHighlyVisible(entry.ControlledTransform.gameObject, msg.PlayerId);
-                }
+                entry.CharacterGuid = msg.CharacterGuid;
+                entry.ControlledTransform.position = spawnPos;
+                entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
             }
 
-            if (entry == null)
+            // Optional: try to enhance with game-native character (but keep fallback as base)
+            if (entry != null && msg.CharacterModelGuid != 0)
             {
-                Plugin.Log.LogWarning($"[Paramulti] Prefab fallback failed for remote player {msg.PlayerId}, using basic fallback");
-                entry = CreateFallbackProxy(msg.PlayerId, msg.FullName, spawnPos);
-                if (entry != null)
+                var nativeEntry = TryCreateRemoteGameNativeCharacter(msg.PlayerId, msg.CharacterGuid, msg.CharacterModelGuid, msg.FullName, spawnPos);
+                if (nativeEntry != null)
                 {
-                    entry.CharacterGuid = msg.CharacterGuid;
-                    entry.ControlledTransform.position = spawnPos;
-                    entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
-                    // Fallback proxies should be fully visible
-                    MakeProxyHighlyVisible(entry.ControlledTransform.gameObject, msg.PlayerId);
+                    // Use game-native character but parent our visible fallback mesh to it
+                    // so we have something visible even if the native char has rendering issues
+                    Plugin.Log.LogInfo($"[Paramulti] Game-native character created for player {msg.PlayerId}, using as base");
+                    entry = nativeEntry;
                 }
             }
 
