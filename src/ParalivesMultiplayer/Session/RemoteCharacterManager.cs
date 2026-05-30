@@ -464,9 +464,33 @@ namespace ParalivesMultiplayer.Session
                 var filter = go.AddComponent<MeshFilter>();
                 filter.mesh = CreateSimpleMesh();
 
-                var mat = new Material(Shader.Find("Standard"));
-                mat.color = GetPlayerColor(playerId);
-                renderer.material = mat;
+                Shader shader = Shader.Find("Standard");
+                if (shader == null) shader = Shader.Find("Diffuse");
+                if (shader == null) shader = Shader.Find("Mobile/Diffuse");
+                if (shader == null) shader = Shader.Find("Sprites/Default");
+                if (shader == null)
+                {
+                    // Last resort: create a very basic shader via code or use an existing material
+                    Plugin.Log.LogWarning("[Paramulti] No suitable shader found for fallback proxy; trying to clone local player material");
+                    var localMat = _localCharacterTransform?.GetComponentInChildren<MeshRenderer>(true)?.material;
+                    if (localMat != null)
+                    {
+                        var matCopy = new Material(localMat.shader);
+                        matCopy.color = GetPlayerColor(playerId);
+                        renderer.material = matCopy;
+                    }
+                    else
+                    {
+                        // Cannot create visible material — but still create the object so it's in the scene
+                        Plugin.Log.LogWarning("[Paramulti] Fallback proxy created without material (will be invisible)");
+                    }
+                }
+                else
+                {
+                    var mat = new Material(shader);
+                    mat.color = GetPlayerColor(playerId);
+                    renderer.material = mat;
+                }
 
                 StripInputComponents(transform);
 

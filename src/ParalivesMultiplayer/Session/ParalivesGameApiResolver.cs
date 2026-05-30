@@ -10,6 +10,7 @@ namespace ParalivesMultiplayer.Session
     {
         static bool _typesScanned;
         static readonly List<string> _logMessages = new List<string>();
+        static readonly HashSet<string> _singletonScannedTypes = new HashSet<string>();
 
         static bool _loggedCharMgrMissing;
         static bool _loggedAssetMgrMissing;
@@ -162,7 +163,11 @@ namespace ParalivesMultiplayer.Session
                         field.Name.Equals("_instance", StringComparison.OrdinalIgnoreCase) ||
                         field.Name.Equals("m_Instance", StringComparison.OrdinalIgnoreCase) ||
                         field.Name.Equals("s_Instance", StringComparison.OrdinalIgnoreCase) ||
-                        field.Name.Equals("instance", StringComparison.OrdinalIgnoreCase))
+                        field.Name.Equals("instance", StringComparison.OrdinalIgnoreCase) ||
+                        field.Name.Equals($"_{type.Name}", StringComparison.OrdinalIgnoreCase) ||
+                        field.Name.Equals($"m_{type.Name}", StringComparison.OrdinalIgnoreCase) ||
+                        field.Name.Equals($"s_{type.Name}", StringComparison.OrdinalIgnoreCase) ||
+                        field.Name.Equals($"_{char.ToLower(type.Name[0])}{type.Name.Substring(1)}", StringComparison.OrdinalIgnoreCase))
                     {
                         var val = field.GetValue(null);
                         if (val != null) return val;
@@ -181,7 +186,8 @@ namespace ParalivesMultiplayer.Session
                 foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic))
                 {
                     if (method.Name.Equals("GetInstance", StringComparison.OrdinalIgnoreCase) ||
-                        method.Name.Equals("Get", StringComparison.OrdinalIgnoreCase))
+                        method.Name.Equals("Get", StringComparison.OrdinalIgnoreCase) ||
+                        method.Name.Equals($"Get{type.Name}", StringComparison.OrdinalIgnoreCase))
                     {
                         if (method.GetParameters().Length == 0 && method.ReturnType != typeof(void))
                         {
@@ -189,6 +195,21 @@ namespace ParalivesMultiplayer.Session
                             if (val != null) return val;
                         }
                     }
+                }
+
+                // One-time diagnostic: log all static fields/properties found (even if null)
+                if (_singletonScannedTypes.Add(type.FullName))
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine($"[GameApi] Singleton scan for {type.FullName}:");
+                    foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic))
+                        sb.AppendLine($"  Prop: {prop.Name} (hasGet={prop.GetGetMethod(true) != null})");
+                    foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic))
+                        sb.AppendLine($"  Field: {field.Name}");
+                    foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic))
+                        if (method.GetParameters().Length == 0 && method.ReturnType != typeof(void))
+                            sb.AppendLine($"  Method: {method.Name} -> {method.ReturnType.Name}");
+                    Log(sb.ToString());
                 }
             }
             catch (Exception ex)

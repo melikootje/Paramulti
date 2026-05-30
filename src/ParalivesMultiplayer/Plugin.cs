@@ -237,6 +237,8 @@ namespace ParalivesMultiplayer
 
         static bool _gameSceneLoaded;
         static int _lastProcessedFrame = -1;
+        static float _lastCharacterDataSyncTime = -999f;
+        const float CharacterDataSyncInterval = 3f;
 
         public static void OnGameUpdate()
         {
@@ -279,6 +281,14 @@ namespace ParalivesMultiplayer
 
                 if (_gameSceneLoaded)
                     CaptureAndSendLocalState();
+
+                // Periodic retry: send our character data to remote players
+                var now = UnityEngine.Time.time;
+                if (now - _lastCharacterDataSyncTime >= CharacterDataSyncInterval)
+                {
+                    _lastCharacterDataSyncTime = now;
+                    TrySendLocalCharacterData();
+                }
 
                 if (MultiplayerSession.IsHost)
                     DesyncDetector.TickCheck();
@@ -357,6 +367,40 @@ namespace ParalivesMultiplayer
             GameLoopPatches.Apply(harmony);
 
             Log.LogInfo("[Patch] All patch containers applied.");
+        }
+
+        static void TrySendLocalCharacterData()
+        {
+            try
+            {
+                var net = TcpNetworkManager.Instance;
+                if (net == null || !MultiplayerSession.IsActive) return;
+
+                var charData = Session.RemoteCharacterManager.BuildLocalCharacterDataSync();
+                if (charData == null) return;
+
+                if (MultiplayerSession.IsHost)
+                {
+                    // Send to all connected clients
+                    foreach (var id in MultiplayerSession.GetPlayerIds())
+                    {
+                        if (id != MultiplayerSession.LocalPlayerId)
+                        {
+                            net.SendToClient(id, charData);
+                            Log.LogDebug($"[Paramulti] Re-sent host character data to client {id}");
+                        }
+                    }
+                }
+                else
+                {
+                    net.SendToHost(charData);
+                    Log.LogDebug("[Paramulti] Re-sent local character data to host");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.LogError($"[Paramulti] TrySendLocalCharacterData error: {ex.Message}");
+            }
         }
 
         static void WireEntitySyncEvents()
