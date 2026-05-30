@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using ParalivesMultiplayer.Networking;
 using ParalivesMultiplayer.Session;
+using UnityEngine;
 
 namespace ParalivesMultiplayer.Input
 {
@@ -33,6 +34,8 @@ namespace ParalivesMultiplayer.Input
                             PreloadKeyProperty("f5Key");
                             PreloadKeyProperty("f6Key");
                             PreloadKeyProperty("f7Key");
+                            PreloadKeyProperty("f8Key");
+                            PreloadKeyProperty("f9Key");
                             break;
                         }
                     }
@@ -45,7 +48,7 @@ namespace ParalivesMultiplayer.Input
             }
 
             bool ready = _keyboardType != null && _keyboardCurrentProp != null;
-            try { Plugin.Log?.LogInfo($"[Cmd] Initialized. InputSystem={ready}. F5=Host, F6=Client, F7=Disconnect."); } catch { }
+            try { Plugin.Log?.LogInfo($"[Cmd] Initialized. InputSystem={ready}. F5=Host, F6=Client, F7=Disconnect, F8=ForceSendCharData, F9=SpawnTestProxy."); } catch { }
         }
 
         static void PreloadKeyProperty(string propName)
@@ -90,6 +93,18 @@ namespace ParalivesMultiplayer.Input
                             StopHost();
                             return;
                         }
+                        if (IsKeyPressedThisFrame(keyboard, "f8Key"))
+                        {
+                            try { Plugin.Log?.LogInfo("[Cmd] F8 pressed (InputSystem) — forcing character data sync"); } catch { }
+                            ForceSendCharacterData();
+                            return;
+                        }
+                        if (IsKeyPressedThisFrame(keyboard, "f9Key"))
+                        {
+                            try { Plugin.Log?.LogInfo("[Cmd] F9 pressed (InputSystem) — spawning test proxy"); } catch { }
+                            SpawnTestProxy();
+                            return;
+                        }
                     }
                 }
                 catch { }
@@ -110,6 +125,16 @@ namespace ParalivesMultiplayer.Input
             {
                 try { Plugin.Log?.LogInfo("[Cmd] F7 pressed (Legacy)"); } catch { }
                 StopHost();
+            }
+            else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F8))
+            {
+                try { Plugin.Log?.LogInfo("[Cmd] F8 pressed (Legacy) — forcing character data sync"); } catch { }
+                ForceSendCharacterData();
+            }
+            else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F9))
+            {
+                try { Plugin.Log?.LogInfo("[Cmd] F9 pressed (Legacy) — spawning test proxy"); } catch { }
+                SpawnTestProxy();
             }
         }
 
@@ -191,6 +216,77 @@ namespace ParalivesMultiplayer.Input
             catch (Exception ex)
             {
                 Plugin.Log?.LogError($"[Cmd] Stop error: {ex.Message}");
+            }
+        }
+
+        static void ForceSendCharacterData()
+        {
+            try
+            {
+                var net = TcpNetworkManager.Instance;
+                if (net == null || !MultiplayerSession.IsActive)
+                {
+                    Plugin.Log?.LogWarning("[Cmd] Cannot force send: network or session not active");
+                    return;
+                }
+
+                // Force FindLocalCharacter first
+                Session.RemoteCharacterManager.FindLocalCharacter();
+
+                var charData = Session.RemoteCharacterManager.BuildLocalCharacterDataSync();
+                if (charData == null)
+                {
+                    Plugin.Log?.LogWarning("[Cmd] Force send: BuildLocalCharacterDataSync returned null");
+                    return;
+                }
+
+                if (MultiplayerSession.IsHost)
+                {
+                    foreach (var id in MultiplayerSession.GetPlayerIds())
+                    {
+                        if (id != MultiplayerSession.LocalPlayerId)
+                        {
+                            net.SendToClient(id, charData);
+                            Plugin.Log?.LogInfo($"[Cmd] Force-sent character data to client {id}");
+                        }
+                    }
+                }
+                else
+                {
+                    net.SendToHost(charData);
+                    Plugin.Log?.LogInfo("[Cmd] Force-sent character data to host");
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogError($"[Cmd] ForceSendCharacterData error: {ex.Message}");
+            }
+        }
+
+        static void SpawnTestProxy()
+        {
+            try
+            {
+                var localTransform = Session.RemoteCharacterManager.LocalCharacterTransform;
+                Vector3 spawnPos;
+                if (localTransform != null)
+                    spawnPos = localTransform.position + new UnityEngine.Vector3(2f, 0f, 2f);
+                else
+                    spawnPos = new UnityEngine.Vector3(0f, 1f, 0f);
+
+                var entry = Session.RemoteCharacterManager.CreateTestProxy(999, "TestProxy", spawnPos);
+                if (entry != null)
+                {
+                    Plugin.Log?.LogInfo($"[Cmd] Spawned test proxy at {spawnPos}. Look around — it should be a brightly colored capsule with a nameplate.");
+                }
+                else
+                {
+                    Plugin.Log?.LogWarning("[Cmd] Test proxy creation returned null");
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogError($"[Cmd] SpawnTestProxy error: {ex.Message}");
             }
         }
     }

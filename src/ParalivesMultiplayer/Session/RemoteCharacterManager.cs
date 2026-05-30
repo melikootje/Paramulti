@@ -26,7 +26,7 @@ namespace ParalivesMultiplayer.Session
         static Transform _localCharacterTransform;
         static bool _localCharacterFound;
         static float _lastFindAttemptTime;
-        const float FindRetryInterval = 5f; // seconds between retry attempts
+        const float FindRetryInterval = 1f; // seconds between retry attempts
 
         public static Transform LocalCharacterTransform => _localCharacterTransform;
         public static bool HasLocalCharacter => _localCharacterFound;
@@ -287,6 +287,21 @@ namespace ParalivesMultiplayer.Session
             return new Vector3(0f, 0f, 0f);
         }
 
+        public static RemoteCharacterEntry CreateTestProxy(int playerId, string playerName, Vector3 spawnPos)
+        {
+            Plugin.Log.LogInfo($"[Paramulti] Creating TEST proxy for player {playerId} at {spawnPos}");
+            var entry = CreateFallbackProxy(playerId, playerName, spawnPos);
+            if (entry != null)
+            {
+                lock (_lock)
+                {
+                    _remoteCharacters[playerId] = entry;
+                }
+                OnRemoteCharacterCreated?.Invoke(playerId, entry);
+            }
+            return entry;
+        }
+
         static ulong GetLocalCharacterModelGuid()
         {
             if (_localCharacterTransform == null || ParalivesGameApiResolver.CharacterManagerInstance == null)
@@ -497,13 +512,14 @@ namespace ParalivesMultiplayer.Session
                 var filter = go.AddComponent<MeshFilter>();
                 filter.mesh = CreateSimpleMesh();
 
-                Shader shader = Shader.Find("Standard");
+                // Use a simple unlit shader that always renders visibly
+                Shader shader = Shader.Find("Sprites/Default");
+                if (shader == null) shader = Shader.Find("Unlit/Color");
+                if (shader == null) shader = Shader.Find("Standard");
                 if (shader == null) shader = Shader.Find("Diffuse");
                 if (shader == null) shader = Shader.Find("Mobile/Diffuse");
-                if (shader == null) shader = Shader.Find("Sprites/Default");
                 if (shader == null)
                 {
-                    // Last resort: create a very basic shader via code or use an existing material
                     Plugin.Log.LogWarning("[Paramulti] No suitable shader found for fallback proxy; trying to clone local player material");
                     var localMat = _localCharacterTransform?.GetComponentInChildren<MeshRenderer>(true)?.material;
                     if (localMat != null)
@@ -514,7 +530,6 @@ namespace ParalivesMultiplayer.Session
                     }
                     else
                     {
-                        // Cannot create visible material — but still create the object so it's in the scene
                         Plugin.Log.LogWarning("[Paramulti] Fallback proxy created without material (will be invisible)");
                     }
                 }
@@ -527,7 +542,7 @@ namespace ParalivesMultiplayer.Session
 
                 StripInputComponents(transform);
                 AttachDebugMarker(go, playerId, playerName);
-                ApplyGhostMaterial(go, playerId);
+                // Do NOT apply ghost material to fallback proxy — keep it fully opaque and visible
 
                 Plugin.Log.LogInfo($"[Paramulti] Created fallback proxy for player {playerId}: {go.name} at {spawnPos}");
 
@@ -610,17 +625,19 @@ namespace ParalivesMultiplayer.Session
         {
             try
             {
-                // Small colored indicator above head
+                // Highly visible colored indicator above head
                 var marker = new GameObject($"[DebugMarker:{playerId}]");
                 marker.transform.SetParent(parent.transform, false);
                 marker.transform.localPosition = new Vector3(0f, 2.1f, 0f);
-                marker.transform.localScale = new Vector3(0.15f, 0.15f, 0.15f);
+                marker.transform.localScale = new Vector3(0.4f, 0.4f, 0.4f);
 
                 var filter = marker.AddComponent<MeshFilter>();
                 filter.mesh = CreateDebugSphereMesh();
 
                 var renderer = marker.AddComponent<MeshRenderer>();
+                // Use a simple unlit shader that always works
                 var shader = Shader.Find("Sprites/Default");
+                if (shader == null) shader = Shader.Find("Unlit/Color");
                 if (shader == null) shader = Shader.Find("Standard");
                 var mat = new Material(shader);
                 mat.color = GetPlayerColor(playerId);
@@ -1260,7 +1277,10 @@ namespace ParalivesMultiplayer.Session
                     return BuildFallbackCharacterDataSync(0);
                 }
 
-                Plugin.Log.LogWarning("[Paramulti] BuildLocalCharacterDataSync: no local character transform available");
+                // Emergency fallback: we don't have a local character transform yet, but session is active.
+                // Send minimal data so the other side at least creates a proxy.
+                Plugin.Log.LogWarning("[Paramulti] BuildLocalCharacterDataSync: no local character transform yet, sending emergency minimal data");
+                return BuildMinimalCharacterDataSync();
             }
             catch (Exception ex)
             {
@@ -1269,10 +1289,37 @@ namespace ParalivesMultiplayer.Session
             return null;
         }
 
+        static ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync BuildMinimalCharacterDataSync()
+        {
+            var guid = GenerateGuidForPlayer(MultiplayerSession.LocalPlayerId);
+            var pos = _localCharacterTransform != null
+                ? _localCharacterTransform.position.FromUnity()
+                : new NetVector3(0f, 1f, 0f);
+            var rot = _localCharacterTransform != null
+                ? _localCharacterTransform.rotation.FromUnity()
+                : new NetQuaternion(0f, 0f, 0f, 1f);
+
+            var msg = new ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync
+            {
+                PlayerId = MultiplayerSession.LocalPlayerId,
+                CharacterGuid = guid,
+                FirstName = $"Player_{MultiplayerSession.LocalPlayerId}",
+                FullName = $"Player_{MultiplayerSession.LocalPlayerId}",
+                Age = 0f,
+                SpeciesGuid = 0UL,
+                CharacterModelGuid = 0UL,
+                CurrentPostureGuid = 0UL,
+                IsDeadOrTakenAway = false,
+                LastKnownPosition = pos,
+                LastKnownRotation = rot
+            };
+
+            Plugin.Log.LogInfo($"[Paramulti] Built MINIMAL character data sync: GUID={guid:X}, Name={msg.FullName}, pos={pos}");
+            return msg;
+        }
+
         static ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync BuildFallbackCharacterDataSync(ulong guid)
         {
-            if (_localCharacterTransform == null) return null;
-
             if (guid == 0)
                 guid = GetLocalCharacterGuid();
             if (guid == 0)
