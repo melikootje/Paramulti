@@ -398,6 +398,10 @@ namespace ParalivesMultiplayer
                 InputRouter.RegisterRemotePlayer(id);
                 BuildSyncManager.RegisterPlayer(id);
                 Session.PlayerSyncManager.RegisterPlayer(id);
+            };
+
+            MultiplayerSession.ClientConnected += (id) =>
+            {
                 ConnectionQualityMonitor.RegisterClient(id);
                 RateLimiter.RegisterClient(id);
             };

@@ -516,13 +516,6 @@ namespace ParalivesMultiplayer.Networking
 
                     if (IsHost)
                     {
-                        var joinMsg = new MsgPlayerJoin
-                        {
-                            PlayerId = msg.SenderClientId,
-                            PlayerName = safeName
-                        };
-                        SendToAllExcept(msg.SenderClientId, joinMsg);
-
                         var hostJoin = new MsgPlayerJoin
                         {
                             PlayerId = 0,

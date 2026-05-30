@@ -22,6 +22,7 @@ namespace ParalivesMultiplayer.Session
         public static event Action OnSessionEnded;
         public static event Action<int, string> PlayerJoined;
         public static event Action<int> PlayerLeft;
+        public static event Action<int> ClientConnected;
 
        public static void StartAsHost()
         {
@@ -72,12 +73,8 @@ namespace ParalivesMultiplayer.Session
        public static void OnClientConnected(int clientId, string clientName)
         {
             if (!IsActive) return;
-            lock (_playersLock)
-            {
-                _players[clientId] = clientName;
-            }
             Plugin.Log.LogInfo($"[Session] Client connected: {clientName} (id={clientId})");
-            PlayerJoined?.Invoke(clientId, clientName);
+            ClientConnected?.Invoke(clientId);
         }
 
         public static void OnPlayerJoined(int playerId, string playerName)
