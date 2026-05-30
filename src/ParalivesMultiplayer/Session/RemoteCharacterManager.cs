@@ -467,11 +467,16 @@ namespace ParalivesMultiplayer.Session
                 transform.position = spawnPos;
                 transform.rotation = Quaternion.identity;
 
+                // Count components before stripping
+                var animators = go.GetComponentsInChildren<Animator>(true).Length;
+                var skinned = go.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length;
+                var meshes = go.GetComponentsInChildren<MeshRenderer>(true).Length;
+
                 StripInputComponents(transform);
                 AttachDebugMarker(go, playerId, playerName);
                 // Prefab clones should be fully visible — ghost material only for game-native chars
 
-                Plugin.Log.LogInfo($"[Paramulti] Created prefab clone for player {playerId}: {go.name} at {spawnPos}");
+                Plugin.Log.LogInfo($"[Paramulti] Created prefab clone for player {playerId}: {go.name} at {spawnPos} (Animator={animators}, SkinnedMesh={skinned}, MeshRenderer={meshes})");
 
                 return new RemoteCharacterEntry
                 {
@@ -495,57 +500,52 @@ namespace ParalivesMultiplayer.Session
         {
             try
             {
-                var go = new GameObject($"[Remote:{playerId}] {playerName}");
+                // Use Unity's built-in cube primitive — guaranteed to render correctly
+                var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                go.name = $"[Remote:{playerId}] {playerName}";
                 go.tag = "Untagged";
 
                 var transform = go.transform;
-                transform.position = spawnPos;
+                // Lift slightly above ground so it doesn't Z-fight with floor
+                transform.position = new Vector3(spawnPos.x, spawnPos.y + 0.01f, spawnPos.z);
                 transform.rotation = Quaternion.identity;
+                // Make it human-sized and very visible
+                transform.localScale = new Vector3(1.5f, 2.5f, 1.5f);
 
-                var capsuleType = Type.GetType("UnityEngine.CapsuleCollider, UnityEngine.PhysicsModule") ?? Type.GetType("CapsuleCollider, UnityEngine");
-                if (capsuleType != null)
+                // Remove the default collider (we don't need physics on proxy)
+                var collider = go.GetComponent<Collider>();
+                if (collider != null) UnityEngine.Object.Destroy(collider);
+
+                // Get the existing renderer and change to bright unlit color
+                var renderer = go.GetComponent<MeshRenderer>();
+                if (renderer != null)
                 {
-                    try { go.AddComponent(capsuleType); } catch { }
-                }
+                    var color = GetPlayerColor(playerId);
+                    // Try Unlit/Color first — always bright regardless of scene lighting
+                    var shader = Shader.Find("Unlit/Color");
+                    if (shader == null) shader = Shader.Find("Standard");
+                    if (shader == null) shader = Shader.Find("Diffuse");
+                    if (shader == null) shader = Shader.Find("Mobile/Diffuse");
 
-                var renderer = go.AddComponent<MeshRenderer>();
-                var filter = go.AddComponent<MeshFilter>();
-                filter.mesh = CreateSimpleMesh();
-
-                // Use a 3D shader that actually renders in the scene (NOT Sprites/Default — that's for 2D)
-                Shader shader = Shader.Find("Standard");
-                if (shader == null) shader = Shader.Find("Diffuse");
-                if (shader == null) shader = Shader.Find("Mobile/Diffuse");
-                if (shader == null) shader = Shader.Find("Unlit/Color");
-                if (shader == null) shader = Shader.Find("Sprites/Default");
-                if (shader == null)
-                {
-                    Plugin.Log.LogWarning("[Paramulti] No suitable shader found for fallback proxy; trying to clone local player material");
-                    var localMat = _localCharacterTransform?.GetComponentInChildren<MeshRenderer>(true)?.material;
-                    if (localMat != null)
+                    if (shader != null)
                     {
-                        var matCopy = new Material(localMat.shader);
-                        matCopy.color = GetPlayerColor(playerId);
-                        renderer.material = matCopy;
+                        var mat = new Material(shader);
+                        mat.color = color;
+                        renderer.material = mat;
+                        Plugin.Log.LogInfo($"[Paramulti] Fallback proxy using shader '{shader.name}' with color {color} for player {playerId}");
                     }
                     else
                     {
-                        Plugin.Log.LogWarning("[Paramulti] Fallback proxy created without material (will be invisible)");
+                        // Fallback: just tint the existing material
+                        renderer.material.color = color;
+                        Plugin.Log.LogWarning($"[Paramulti] Fallback proxy: no shader found, tinting existing material for player {playerId}");
                     }
-                }
-                else
-                {
-                    var mat = new Material(shader);
-                    mat.color = GetPlayerColor(playerId);
-                    renderer.material = mat;
-                    Plugin.Log.LogInfo($"[Paramulti] Fallback proxy using shader '{shader.name}' for player {playerId}");
                 }
 
                 StripInputComponents(transform);
                 AttachDebugMarker(go, playerId, playerName);
-                // Do NOT apply ghost material to fallback proxy — keep it fully opaque and visible
 
-                Plugin.Log.LogInfo($"[Paramulti] Created fallback proxy for player {playerId}: {go.name} at {spawnPos}");
+                Plugin.Log.LogInfo($"[Paramulti] Created fallback proxy (CUBE) for player {playerId}: {go.name} at {transform.position}, scale={transform.localScale}");
 
                 return new RemoteCharacterEntry
                 {
@@ -764,9 +764,11 @@ namespace ParalivesMultiplayer.Session
             try
             {
                 var color = GetPlayerColor(playerId);
-                var shader = Shader.Find("Standard");
+                // Use Unlit/Color first so proxy is bright regardless of lighting
+                var shader = Shader.Find("Unlit/Color");
+                if (shader == null) shader = Shader.Find("Standard");
                 if (shader == null) shader = Shader.Find("Diffuse");
-                if (shader == null) shader = Shader.Find("Unlit/Color");
+                if (shader == null) shader = Shader.Find("Mobile/Diffuse");
                 if (shader == null) shader = Shader.Find("Sprites/Default");
                 if (shader == null) return;
 
@@ -790,7 +792,18 @@ namespace ParalivesMultiplayer.Session
                     rend.material = brightMat;
                 }
 
-                Plugin.Log.LogInfo($"[Paramulti] Made proxy highly visible for player {playerId} ({renderers.Length} mesh, {skinnedRenderers.Length} skinned)");
+                // Add a bright point light ON the proxy itself so the floor/walls glow
+                var proxyLight = root.GetComponent<Light>();
+                if (proxyLight == null)
+                {
+                    proxyLight = root.AddComponent<Light>();
+                    proxyLight.type = LightType.Point;
+                }
+                proxyLight.color = color;
+                proxyLight.intensity = 5f;
+                proxyLight.range = 6f;
+
+                Plugin.Log.LogInfo($"[Paramulti] Made proxy highly visible for player {playerId} ({renderers.Length} mesh, {skinnedRenderers.Length} skinned, shader={shader.name})");
             }
             catch (Exception ex)
             {
@@ -991,10 +1004,12 @@ namespace ParalivesMultiplayer.Session
         {
             if (root == null) return;
 
+            // IMPORTANT: Do NOT strip Animator — SkinnedMeshRenderer needs it enabled to render!
+            // Only strip input/movement/physics components.
             var inputComponentNames = new string[]
             {
                 "PlayerInput", "InputManager", "CharacterController",
-                "Rigidbody", "Animator", "NavMeshAgent",
+                "Rigidbody", "NavMeshAgent",
                 "PlayerController", "MovementController", "InputHandler",
                 "CameraController", "ThirdPersonController", "FirstPersonController",
                 "HybridPlayer"
@@ -1045,7 +1060,7 @@ namespace ParalivesMultiplayer.Session
 
             if (stripped > 0)
             {
-                Plugin.Log.LogInfo($"[Paramulti] Stripped {stripped} input/control components from remote character");
+                Plugin.Log.LogInfo($"[Paramulti] Stripped {stripped} input/control components from remote character (Animator KEPT for rendering)");
             }
         }
 
@@ -1470,27 +1485,27 @@ namespace ParalivesMultiplayer.Session
                 }
             }
 
-            // Always create a visible fallback proxy first — it's guaranteed to render
+            // Try to create actual Paralives character model first (prefab clone)
             Vector3 spawnPos = msg.LastKnownPosition.ToUnity();
-            var entry = CreateFallbackProxy(msg.PlayerId, msg.FullName, spawnPos);
-            if (entry != null)
+            var entry = TryCreatePrefabClone(msg.PlayerId, msg.FullName, spawnPos);
+
+            if (entry == null)
+            {
+                // Fallback to simple colored cube if prefab clone fails
+                Plugin.Log.LogWarning($"[Paramulti] Prefab clone failed for player {msg.PlayerId}, using fallback cube");
+                entry = CreateFallbackProxy(msg.PlayerId, msg.FullName, spawnPos);
+                if (entry != null)
+                {
+                    entry.CharacterGuid = msg.CharacterGuid;
+                    entry.ControlledTransform.position = spawnPos;
+                    entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
+                }
+            }
+            else
             {
                 entry.CharacterGuid = msg.CharacterGuid;
                 entry.ControlledTransform.position = spawnPos;
                 entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
-            }
-
-            // Optional: try to enhance with game-native character (but keep fallback as base)
-            if (entry != null && msg.CharacterModelGuid != 0)
-            {
-                var nativeEntry = TryCreateRemoteGameNativeCharacter(msg.PlayerId, msg.CharacterGuid, msg.CharacterModelGuid, msg.FullName, spawnPos);
-                if (nativeEntry != null)
-                {
-                    // Use game-native character but parent our visible fallback mesh to it
-                    // so we have something visible even if the native char has rendering issues
-                    Plugin.Log.LogInfo($"[Paramulti] Game-native character created for player {msg.PlayerId}, using as base");
-                    entry = nativeEntry;
-                }
             }
 
             if (entry == null)
