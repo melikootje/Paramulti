@@ -512,12 +512,12 @@ namespace ParalivesMultiplayer.Session
                 var filter = go.AddComponent<MeshFilter>();
                 filter.mesh = CreateSimpleMesh();
 
-                // Use a simple unlit shader that always renders visibly
-                Shader shader = Shader.Find("Sprites/Default");
-                if (shader == null) shader = Shader.Find("Unlit/Color");
-                if (shader == null) shader = Shader.Find("Standard");
+                // Use a 3D shader that actually renders in the scene (NOT Sprites/Default — that's for 2D)
+                Shader shader = Shader.Find("Standard");
                 if (shader == null) shader = Shader.Find("Diffuse");
                 if (shader == null) shader = Shader.Find("Mobile/Diffuse");
+                if (shader == null) shader = Shader.Find("Unlit/Color");
+                if (shader == null) shader = Shader.Find("Sprites/Default");
                 if (shader == null)
                 {
                     Plugin.Log.LogWarning("[Paramulti] No suitable shader found for fallback proxy; trying to clone local player material");
@@ -538,6 +538,7 @@ namespace ParalivesMultiplayer.Session
                     var mat = new Material(shader);
                     mat.color = GetPlayerColor(playerId);
                     renderer.material = mat;
+                    Plugin.Log.LogInfo($"[Paramulti] Fallback proxy using shader '{shader.name}' for player {playerId}");
                 }
 
                 StripInputComponents(transform);
@@ -637,9 +638,10 @@ namespace ParalivesMultiplayer.Session
                 filter.mesh = CreateDebugSphereMesh();
 
                 var renderer = marker.AddComponent<MeshRenderer>();
-                var shader = Shader.Find("Sprites/Default");
+                var shader = Shader.Find("Standard");
+                if (shader == null) shader = Shader.Find("Diffuse");
                 if (shader == null) shader = Shader.Find("Unlit/Color");
-                if (shader == null) shader = Shader.Find("Standard");
+                if (shader == null) shader = Shader.Find("Sprites/Default");
                 var mat = new Material(shader);
                 mat.color = color;
                 renderer.material = mat;
@@ -659,9 +661,10 @@ namespace ParalivesMultiplayer.Session
                 var beamFilter = beam.AddComponent<MeshFilter>();
                 beamFilter.mesh = CreateBeamMesh();
                 var beamRenderer = beam.AddComponent<MeshRenderer>();
-                var beamShader = Shader.Find("Sprites/Default");
+                var beamShader = Shader.Find("Standard");
+                if (beamShader == null) beamShader = Shader.Find("Diffuse");
                 if (beamShader == null) beamShader = Shader.Find("Unlit/Color");
-                if (beamShader == null) beamShader = Shader.Find("Standard");
+                if (beamShader == null) beamShader = Shader.Find("Sprites/Default");
                 var beamMat = new Material(beamShader);
                 beamMat.color = new Color(color.r, color.g, color.b, 0.6f);
                 beamRenderer.material = beamMat;
@@ -751,9 +754,10 @@ namespace ParalivesMultiplayer.Session
             try
             {
                 var color = GetPlayerColor(playerId);
-                var shader = Shader.Find("Sprites/Default");
+                var shader = Shader.Find("Standard");
+                if (shader == null) shader = Shader.Find("Diffuse");
                 if (shader == null) shader = Shader.Find("Unlit/Color");
-                if (shader == null) shader = Shader.Find("Standard");
+                if (shader == null) shader = Shader.Find("Sprites/Default");
                 if (shader == null) return;
 
                 var brightMat = new Material(shader);
