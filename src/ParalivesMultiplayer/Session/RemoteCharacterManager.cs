@@ -1485,27 +1485,37 @@ namespace ParalivesMultiplayer.Session
                 }
             }
 
-            // Try to create actual Paralives character model first (prefab clone)
+            // Always create the visible fallback cube FIRST — guaranteed to render
             Vector3 spawnPos = msg.LastKnownPosition.ToUnity();
-            var entry = TryCreatePrefabClone(msg.PlayerId, msg.FullName, spawnPos);
-
-            if (entry == null)
-            {
-                // Fallback to simple colored cube if prefab clone fails
-                Plugin.Log.LogWarning($"[Paramulti] Prefab clone failed for player {msg.PlayerId}, using fallback cube");
-                entry = CreateFallbackProxy(msg.PlayerId, msg.FullName, spawnPos);
-                if (entry != null)
-                {
-                    entry.CharacterGuid = msg.CharacterGuid;
-                    entry.ControlledTransform.position = spawnPos;
-                    entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
-                }
-            }
-            else
+            var entry = CreateFallbackProxy(msg.PlayerId, msg.FullName, spawnPos);
+            if (entry != null)
             {
                 entry.CharacterGuid = msg.CharacterGuid;
                 entry.ControlledTransform.position = spawnPos;
                 entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
+            }
+
+            // Optionally try to enhance with actual character model (prefab clone)
+            // Parent it to the fallback cube so the cube remains as backup visibility
+            var prefabEntry = TryCreatePrefabClone(msg.PlayerId, msg.FullName, spawnPos);
+            if (prefabEntry != null && prefabEntry.ControlledTransform != null)
+            {
+                // Parent the character model to our visible cube so they move together
+                if (entry != null && entry.ControlledTransform != null)
+                {
+                    prefabEntry.ControlledTransform.SetParent(entry.ControlledTransform, false);
+                    prefabEntry.ControlledTransform.localPosition = Vector3.zero;
+                    prefabEntry.ControlledTransform.localRotation = Quaternion.identity;
+                    Plugin.Log.LogInfo($"[Paramulti] Parented prefab clone to fallback cube for player {msg.PlayerId}");
+                }
+                else
+                {
+                    // No fallback cube exists, use the prefab clone directly
+                    entry = prefabEntry;
+                    entry.CharacterGuid = msg.CharacterGuid;
+                    entry.ControlledTransform.position = spawnPos;
+                    entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
+                }
             }
 
             if (entry == null)
