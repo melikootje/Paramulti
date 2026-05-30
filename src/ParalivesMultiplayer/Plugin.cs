@@ -400,11 +400,6 @@ namespace ParalivesMultiplayer
 
             MultiplayerSession.PlayerJoined += (id, name) =>
             {
-                // Only register remote players with DesyncDetector if WE are the host.
-                // Clients should NOT monitor other players - they only send heartbeats to host.
-                // The local player (us) never sends heartbeats to itself, so skip that too.
-                if (MultiplayerSession.IsHost && id != MultiplayerSession.LocalPlayerId)
-                    DesyncDetector.RegisterPlayer(id);
                 InputRouter.RegisterRemotePlayer(id);
                 BuildSyncManager.RegisterPlayer(id);
                 Session.PlayerSyncManager.RegisterPlayer(id);
