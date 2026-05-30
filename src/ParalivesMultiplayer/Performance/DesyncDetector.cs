@@ -61,8 +61,7 @@ namespace ParalivesMultiplayer.Performance
                 }
 
                 state.LastTick = hb.Tick;
-                state.LastSequence = hb.SequenceNumber;
-                state.LastTimestampMs = hb.TimestampMs;
+                state.LastTimestampMs = _sw.ElapsedMilliseconds;
                 state.MissedHeartbeats = 0;
 
                 uint tickDrift = (uint)Math.Abs((long)hb.Tick - (long)MultiplayerSession.Tick);
