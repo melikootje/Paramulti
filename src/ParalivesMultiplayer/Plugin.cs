@@ -246,6 +246,8 @@ namespace ParalivesMultiplayer
 
             if (MultiplayerSession.IsActive)
             {
+                MultiplayerSession.IncrementTick();
+
                 if (!_gameSceneLoaded && ParalivesGameApiResolver.CharacterManagerInstance != null)
                 {
                     _gameSceneLoaded = true;
