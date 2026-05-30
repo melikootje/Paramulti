@@ -589,6 +589,7 @@ namespace ParalivesMultiplayer.Networking
                     break;
 
                 case MsgUpdateState update:
+                    Plugin.Log.LogInfo($"[Net] UpdateState from player {update.PlayerId} at {update.Position}, tick={update.Tick}");
                     Session.PlayerSyncManager.EnqueueState(update);
                     if (IsHost)
                         SendToAllExcept(msg.SenderClientId, update);

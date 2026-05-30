@@ -469,7 +469,7 @@ namespace ParalivesMultiplayer.Session
 
                 StripInputComponents(transform);
                 AttachDebugMarker(go, playerId, playerName);
-                ApplyGhostMaterial(go, playerId);
+                // Prefab clones should be fully visible — ghost material only for game-native chars
 
                 Plugin.Log.LogInfo($"[Paramulti] Created prefab clone for player {playerId}: {go.name} at {spawnPos}");
 
@@ -625,28 +625,51 @@ namespace ParalivesMultiplayer.Session
         {
             try
             {
-                // Highly visible colored indicator above head
+                var color = GetPlayerColor(playerId);
+
+                // 1) Big glowing sphere above head
                 var marker = new GameObject($"[DebugMarker:{playerId}]");
                 marker.transform.SetParent(parent.transform, false);
-                marker.transform.localPosition = new Vector3(0f, 2.1f, 0f);
-                marker.transform.localScale = new Vector3(0.4f, 0.4f, 0.4f);
+                marker.transform.localPosition = new Vector3(0f, 2.5f, 0f);
+                marker.transform.localScale = new Vector3(1.0f, 1.0f, 1.0f);
 
                 var filter = marker.AddComponent<MeshFilter>();
                 filter.mesh = CreateDebugSphereMesh();
 
                 var renderer = marker.AddComponent<MeshRenderer>();
-                // Use a simple unlit shader that always works
                 var shader = Shader.Find("Sprites/Default");
                 if (shader == null) shader = Shader.Find("Unlit/Color");
                 if (shader == null) shader = Shader.Find("Standard");
                 var mat = new Material(shader);
-                mat.color = GetPlayerColor(playerId);
+                mat.color = color;
                 renderer.material = mat;
+
+                // 2) Point light to make it glow
+                var light = marker.AddComponent<Light>();
+                light.type = LightType.Point;
+                light.color = color;
+                light.intensity = 3f;
+                light.range = 8f;
+
+                // 3) Tall vertical beam so proxy is visible from far away
+                var beam = new GameObject($"[Beam:{playerId}]");
+                beam.transform.SetParent(parent.transform, false);
+                beam.transform.localPosition = new Vector3(0f, 1.0f, 0f);
+                beam.transform.localScale = new Vector3(0.2f, 3.0f, 0.2f);
+                var beamFilter = beam.AddComponent<MeshFilter>();
+                beamFilter.mesh = CreateBeamMesh();
+                var beamRenderer = beam.AddComponent<MeshRenderer>();
+                var beamShader = Shader.Find("Sprites/Default");
+                if (beamShader == null) beamShader = Shader.Find("Unlit/Color");
+                if (beamShader == null) beamShader = Shader.Find("Standard");
+                var beamMat = new Material(beamShader);
+                beamMat.color = new Color(color.r, color.g, color.b, 0.6f);
+                beamRenderer.material = beamMat;
 
                 // Floating nameplate
                 AttachNameplate(parent, playerId, playerName);
 
-                Plugin.Log.LogInfo($"[Paramulti] Attached debug marker + nameplate to remote player {playerId} proxy");
+                Plugin.Log.LogInfo($"[Paramulti] Attached debug marker + beam + nameplate to remote player {playerId} proxy");
             }
             catch (Exception ex)
             {
@@ -721,6 +744,61 @@ namespace ParalivesMultiplayer.Session
             {
                 Plugin.Log.LogWarning($"[Paramulti] Ghost material failed for player {playerId}: {ex.Message}");
             }
+        }
+
+        static void MakeProxyHighlyVisible(GameObject root, int playerId)
+        {
+            try
+            {
+                var color = GetPlayerColor(playerId);
+                var shader = Shader.Find("Sprites/Default");
+                if (shader == null) shader = Shader.Find("Unlit/Color");
+                if (shader == null) shader = Shader.Find("Standard");
+                if (shader == null) return;
+
+                var brightMat = new Material(shader);
+                brightMat.color = color;
+
+                var renderers = root.GetComponentsInChildren<MeshRenderer>(true);
+                foreach (var rend in renderers)
+                {
+                    if (rend == null) continue;
+                    if (rend.gameObject.name.StartsWith("[DebugMarker")) continue;
+                    if (rend.gameObject.name.StartsWith("[Nameplate")) continue;
+                    if (rend.gameObject.name.StartsWith("[Beam")) continue;
+                    rend.material = brightMat;
+                }
+
+                var skinnedRenderers = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+                foreach (var rend in skinnedRenderers)
+                {
+                    if (rend == null) continue;
+                    rend.material = brightMat;
+                }
+
+                Plugin.Log.LogInfo($"[Paramulti] Made proxy highly visible for player {playerId} ({renderers.Length} mesh, {skinnedRenderers.Length} skinned)");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] MakeProxyHighlyVisible failed for player {playerId}: {ex.Message}");
+            }
+        }
+
+        static Mesh CreateBeamMesh()
+        {
+            var mesh = new Mesh();
+            mesh.name = "VerticalBeam";
+            float w = 0.5f, h = 1.0f;
+            var verts = new Vector3[4];
+            verts[0] = new Vector3(-w, -h, 0f);
+            verts[1] = new Vector3(w, -h, 0f);
+            verts[2] = new Vector3(-w, h, 0f);
+            verts[3] = new Vector3(w, h, 0f);
+            var tris = new int[] { 0, 2, 1, 2, 3, 1 };
+            mesh.vertices = verts;
+            mesh.triangles = tris;
+            mesh.RecalculateNormals();
+            return mesh;
         }
 
         static Mesh CreateDebugSphereMesh()
@@ -849,7 +927,7 @@ namespace ParalivesMultiplayer.Session
                 entry.LastKnownPosition = position;
                 entry.LastKnownRotation = rotation;
 
-                Plugin.Log.LogDebug($"[Paramulti][Sync] Applying transform for Player {playerId}. pos={position}, rot={rotation}");
+                Plugin.Log.LogInfo($"[Paramulti][Sync] Applying transform for Player {playerId}. pos={position}, rot={rotation}");
 
                 try
                 {
@@ -1352,18 +1430,27 @@ namespace ParalivesMultiplayer.Session
         {
             if (msg == null) return;
 
-            Plugin.Log.LogInfo($"[Paramulti] Applying remote character data sync from player {msg.PlayerId}: GUID={msg.CharacterGuid:X}, Name={msg.FullName}, Model={msg.CharacterModelGuid:X}");
+            Plugin.Log.LogInfo($"[Paramulti] Applying remote character data sync from player {msg.PlayerId}: GUID={msg.CharacterGuid:X}, Name={msg.FullName}, Model={msg.CharacterModelGuid:X}, pos={msg.LastKnownPosition}");
 
             CharacterOwnershipManager.RegisterOwnership(msg.PlayerId, msg.CharacterGuid);
 
-            // Check if we already have this character
+            // Check if we already have this character — update position instead of recreating
             lock (_lock)
             {
-                foreach (var kv in _remoteCharacters)
+                if (_remoteCharacters.TryGetValue(msg.PlayerId, out var existingEntry))
                 {
-                    if (kv.Value.CharacterGuid == msg.CharacterGuid)
+                    if (existingEntry.CharacterGuid == msg.CharacterGuid)
                     {
-                        Plugin.Log.LogInfo($"[Paramulti] Remote character GUID={msg.CharacterGuid:X} already exists, skipping creation");
+                        var newPos = msg.LastKnownPosition.ToUnity();
+                        var newRot = msg.LastKnownRotation.ToUnity();
+                        if (existingEntry.ControlledTransform != null)
+                        {
+                            existingEntry.ControlledTransform.position = newPos;
+                            existingEntry.ControlledTransform.rotation = newRot;
+                            existingEntry.LastKnownPosition = newPos;
+                            existingEntry.LastKnownRotation = newRot;
+                        }
+                        Plugin.Log.LogInfo($"[Paramulti] Updated existing proxy for player {msg.PlayerId} to pos={newPos}");
                         return;
                     }
                 }
@@ -1382,6 +1469,8 @@ namespace ParalivesMultiplayer.Session
                     entry.CharacterGuid = msg.CharacterGuid;
                     entry.ControlledTransform.position = spawnPos;
                     entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
+                    // Prefab clones should be fully visible — no ghost material
+                    MakeProxyHighlyVisible(entry.ControlledTransform.gameObject, msg.PlayerId);
                 }
             }
 
@@ -1394,6 +1483,8 @@ namespace ParalivesMultiplayer.Session
                     entry.CharacterGuid = msg.CharacterGuid;
                     entry.ControlledTransform.position = spawnPos;
                     entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
+                    // Fallback proxies should be fully visible
+                    MakeProxyHighlyVisible(entry.ControlledTransform.gameObject, msg.PlayerId);
                 }
             }
 
