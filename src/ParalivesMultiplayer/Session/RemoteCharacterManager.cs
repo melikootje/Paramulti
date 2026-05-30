@@ -175,6 +175,77 @@ namespace ParalivesMultiplayer.Session
                     }
                 }
 
+                // Path 3: Resolve runtime visual from HouseholdManager character GUIDs
+                if (ParalivesGameApiResolver.HouseholdManagerInstance != null &&
+                    ParalivesGameApiResolver.CharacterManagerInstance != null &&
+                    ParalivesGameApiResolver.GetLoadedCharacterVisualMethod != null)
+                {
+                    var hm = ParalivesGameApiResolver.HouseholdManagerInstance;
+                    var getCharsMethod = ParalivesGameApiResolver.GetCharactersInCurrentHouseholdMethod;
+                    if (getCharsMethod != null)
+                    {
+                        var chars = getCharsMethod.Invoke(hm, null) as System.Collections.IList;
+                        if (chars != null && chars.Count > 0)
+                        {
+                            var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+                            var loadedVisMethod = ParalivesGameApiResolver.GetLoadedCharacterVisualMethod;
+                            foreach (var c in chars)
+                            {
+                                var guidProp = c.GetType().GetProperty("GUID");
+                                var guid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
+                                if (guid == 0) continue;
+
+                                var runtimeVisual = loadedVisMethod.Invoke(charMgr, new object[] { guid });
+                                if (runtimeVisual != null)
+                                {
+                                    var t = ExtractTransform(runtimeVisual);
+                                    if (t != null)
+                                    {
+                                        _localCharacterTransform = t;
+                                        _localCharacterFound = true;
+                                        Plugin.Log.LogInfo($"[Paramulti] Found local character via GetLoadedCharacterVisual GUID={guid:X}: {t.gameObject.name}");
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Path 4: Use main camera follow target (live world camera tracking)
+                var mainCam = UnityEngine.Camera.main;
+                if (mainCam != null)
+                {
+                    // Try common camera follow controller fields
+                    var camController = mainCam.GetComponent("CameraController");
+                    if (camController != null)
+                    {
+                        var followField = camController.GetType().GetField("Target", BindingFlags.Public | BindingFlags.Instance);
+                        if (followField == null)
+                            followField = camController.GetType().GetField("FollowTarget", BindingFlags.Public | BindingFlags.Instance);
+                        if (followField == null)
+                            followField = camController.GetType().GetField("CurrentTarget", BindingFlags.Public | BindingFlags.Instance);
+                        if (followField != null)
+                        {
+                            var followObj = followField.GetValue(camController);
+                            if (followObj is Transform ft)
+                            {
+                                _localCharacterTransform = ft;
+                                _localCharacterFound = true;
+                                Plugin.Log.LogInfo($"[Paramulti] Found local character via camera follow target: {ft.gameObject.name}");
+                                return;
+                            }
+                            else if (followObj is GameObject fg)
+                            {
+                                _localCharacterTransform = fg.transform;
+                                _localCharacterFound = true;
+                                Plugin.Log.LogInfo($"[Paramulti] Found local character via camera follow target: {fg.name}");
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 // Debug: log what we're finding at each step
                 Plugin.Log.LogInfo("[Paramulti] Character search failed — diagnostics:");
                 var charMgr2 = ParalivesGameApiResolver.CharacterManagerInstance;
@@ -422,8 +493,9 @@ namespace ParalivesMultiplayer.Session
                 transform.rotation = Quaternion.identity;
 
                 StripInputComponents(transform);
+                AttachDebugMarker(go, playerId);
 
-                Plugin.Log.LogInfo($"[Paramulti] Created prefab clone for player {playerId}: {go.name}");
+                Plugin.Log.LogInfo($"[Paramulti] Created prefab clone for player {playerId}: {go.name} at {spawnPos}");
 
                 return new RemoteCharacterEntry
                 {
@@ -493,8 +565,9 @@ namespace ParalivesMultiplayer.Session
                 }
 
                 StripInputComponents(transform);
+                AttachDebugMarker(go, playerId);
 
-                Plugin.Log.LogInfo($"[Paramulti] Created fallback proxy for player {playerId}: {go.name}");
+                Plugin.Log.LogInfo($"[Paramulti] Created fallback proxy for player {playerId}: {go.name} at {spawnPos}");
 
                 return new RemoteCharacterEntry
                 {
@@ -569,6 +642,78 @@ namespace ParalivesMultiplayer.Session
                 new Color(1f, 1f, 0.4f),
             };
             return colors[playerId % colors.Length];
+        }
+
+        static void AttachDebugMarker(GameObject parent, int playerId)
+        {
+            try
+            {
+                var marker = new GameObject($"[DebugMarker:{playerId}]");
+                marker.transform.SetParent(parent.transform, false);
+                marker.transform.localPosition = new Vector3(0f, 1.8f, 0f);
+                marker.transform.localScale = new Vector3(0.3f, 0.3f, 0.3f);
+
+                var filter = marker.AddComponent<MeshFilter>();
+                filter.mesh = CreateDebugSphereMesh();
+
+                var renderer = marker.AddComponent<MeshRenderer>();
+                var shader = Shader.Find("Sprites/Default");
+                if (shader == null) shader = Shader.Find("Standard");
+                var mat = new Material(shader);
+                mat.color = GetPlayerColor(playerId);
+                renderer.material = mat;
+
+                // Add a point light to make it glow
+                var light = marker.AddComponent<Light>();
+                light.color = GetPlayerColor(playerId);
+                light.range = 5f;
+                light.intensity = 2f;
+                light.type = LightType.Point;
+
+                Plugin.Log.LogInfo($"[Paramulti] Attached debug marker to remote player {playerId} proxy");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] Debug marker failed for player {playerId}: {ex.Message}");
+            }
+        }
+
+        static Mesh CreateDebugSphereMesh()
+        {
+            // Simple icosahedron-ish sphere
+            var mesh = new Mesh();
+            mesh.name = "DebugSphere";
+            var verts = new Vector3[12];
+            float r = 0.5f;
+            float phi = (1f + Mathf.Sqrt(5f)) / 2f;
+            float a = r / Mathf.Sqrt(1 + phi * phi);
+            float b = a * phi;
+
+            verts[0] = new Vector3(-a, b, 0);
+            verts[1] = new Vector3(a, b, 0);
+            verts[2] = new Vector3(-a, -b, 0);
+            verts[3] = new Vector3(a, -b, 0);
+            verts[4] = new Vector3(0, -a, b);
+            verts[5] = new Vector3(0, a, b);
+            verts[6] = new Vector3(0, -a, -b);
+            verts[7] = new Vector3(0, a, -b);
+            verts[8] = new Vector3(b, 0, -a);
+            verts[9] = new Vector3(b, 0, a);
+            verts[10] = new Vector3(-b, 0, -a);
+            verts[11] = new Vector3(-b, 0, a);
+
+            var tris = new int[]
+            {
+                0,11,5, 0,5,1, 0,1,7, 0,7,10, 0,10,11,
+                1,5,9, 5,11,4, 11,10,2, 10,7,6, 7,1,8,
+                3,9,4, 3,4,2, 3,2,6, 3,6,8, 3,8,9,
+                4,11,2, 6,10,2, 8,7,6, 9,5,4, 9,8,1
+            };
+
+            mesh.vertices = verts;
+            mesh.triangles = tris;
+            mesh.RecalculateNormals();
+            return mesh;
         }
 
         static ulong GenerateGuidForPlayer(int playerId)
