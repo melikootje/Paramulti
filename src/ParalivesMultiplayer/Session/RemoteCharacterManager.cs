@@ -308,36 +308,63 @@ namespace ParalivesMultiplayer.Session
 
             try
             {
-                // Method 1: Look for CharacterVisual component on local transform and read its Data
+                // Method 1: Look for AssetCharacterVisual component on the local transform's GameObject
+                // This is the data asset that has a Data property with CurrentCharacterModelGUID
                 foreach (var comp in _localCharacterTransform.GetComponents<Component>())
                 {
-                    if (comp == null || comp.GetType().Name != "CharacterVisual") continue;
+                    if (comp == null) continue;
+                    var typeName = comp.GetType().Name;
 
-                    // CharacterVisual should have a Data field/property with CurrentCharacterModelGUID
-                    var dataField = comp.GetType().GetField("Data");
-                    var dataProp = comp.GetType().GetProperty("Data");
-                    object data = dataField?.GetValue(comp) ?? dataProp?.GetValue(comp);
-                    if (data == null)
+                    // AssetCharacterVisual has Data -> CurrentCharacterModelGUID
+                    if (typeName == "AssetCharacterVisual")
                     {
-                        // Maybe Data is on a different component
-                        continue;
+                        var dataField = comp.GetType().GetField("Data");
+                        var dataProp = comp.GetType().GetProperty("Data");
+                        object data = dataField?.GetValue(comp) ?? dataProp?.GetValue(comp);
+                        if (data != null)
+                        {
+                            var modelField = data.GetType().GetField("CurrentCharacterModelGUID");
+                            if (modelField != null)
+                            {
+                                var guid = (ulong)modelField.GetValue(data);
+                                Plugin.Log.LogInfo($"[Paramulti] Got model GUID via AssetCharacterVisual.Data: {guid:X}");
+                                return guid;
+                            }
+                        }
                     }
 
-                    var modelField = data.GetType().GetField("CurrentCharacterModelGUID");
-                    if (modelField != null)
+                    // CharacterVisual might have a reference to the asset/character
+                    if (typeName == "CharacterVisual")
                     {
-                        var guid = (ulong)modelField.GetValue(data);
-                        Plugin.Log.LogInfo($"[Paramulti] Got model GUID via CharacterVisual.Data: {guid:X}");
-                        return guid;
-                    }
+                        // Try various field names that might contain the character data or GUID
+                        foreach (var fieldName in new[] { "CharacterData", "AssetCharacterData", "m_CharacterData", 
+                                                           "characterData", "Data", "Asset" })
+                        {
+                            var f = comp.GetType().GetField(fieldName, 
+                                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | 
+                                System.Reflection.BindingFlags.Instance);
+                            if (f == null) continue;
+                            var val = f.GetValue(comp);
+                            if (val == null) continue;
 
-                    // Fall back to field named "GUID" on the character data
-                    var characterModelField = data.GetType().GetField("CharacterModelGUID");
-                    if (characterModelField != null)
-                    {
-                        var guid = (ulong)characterModelField.GetValue(data);
-                        Plugin.Log.LogInfo($"[Paramulti] Got model GUID via CharacterModelGUID: {guid:X}");
-                        return guid;
+                            // Try to get CurrentCharacterModelGUID from whatever we found
+                            var mf = val.GetType().GetField("CurrentCharacterModelGUID");
+                            if (mf != null)
+                            {
+                                var guid = (ulong)mf.GetValue(val);
+                                Plugin.Log.LogInfo($"[Paramulti] Got model GUID via CharacterVisual.{fieldName}: {guid:X}");
+                                return guid;
+                            }
+
+                            // Try CharacterModelGUID as alternative
+                            var mgf = val.GetType().GetField("CharacterModelGUID");
+                            if (mgf != null)
+                            {
+                                var guid = (ulong)mgf.GetValue(val);
+                                Plugin.Log.LogInfo($"[Paramulti] Got model GUID via CharacterVisual.{fieldName}.CharacterModelGUID: {guid:X}");
+                                return guid;
+                            }
+                        }
                     }
                 }
 
