@@ -465,18 +465,16 @@ namespace ParalivesMultiplayer.Session
         {
             try
             {
-                if (ParalivesGameApiResolver.CharacterManagerInstance == null)
+                // Clone the LOCAL player's CharacterVisual as the proxy
+                // This gives us a visible character model (even if it's the wrong appearance)
+                if (_localCharacterTransform == null)
+                {
+                    Plugin.Log.LogWarning($"[Paramulti] Cannot clone local character for player {playerId}: local transform is null");
                     return null;
+                }
 
-                var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-                var cmType = ParalivesGameApiResolver.CharacterManagerType;
-                var prefabField = cmType.GetField("CharacterPrefab");
-                if (prefabField == null) return null;
-
-                var prefab = prefabField.GetValue(charMgr) as Component;
-                if (prefab == null) return null;
-
-                var go = UnityEngine.Object.Instantiate(prefab.gameObject);
+                var localGo = _localCharacterTransform.gameObject;
+                var go = UnityEngine.Object.Instantiate(localGo);
                 go.name = $"[Remote:{playerId}] {playerName}";
                 var transform = go.transform;
                 transform.position = spawnPos;
@@ -489,9 +487,8 @@ namespace ParalivesMultiplayer.Session
 
                 StripInputComponents(transform);
                 AttachDebugMarker(go, playerId, playerName);
-                // Prefab clones should be fully visible — ghost material only for game-native chars
 
-                Plugin.Log.LogInfo($"[Paramulti] Created prefab clone for player {playerId}: {go.name} at {spawnPos} (Animator={animators}, SkinnedMesh={skinned}, MeshRenderer={meshes})");
+                Plugin.Log.LogInfo($"[Paramulti] Cloned local character for player {playerId}: {go.name} at {spawnPos} (Animator={animators}, SkinnedMesh={skinned}, MeshRenderer={meshes})");
 
                 return new RemoteCharacterEntry
                 {
@@ -506,7 +503,7 @@ namespace ParalivesMultiplayer.Session
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogWarning($"[Paramulti] Prefab clone failed for player {playerId}: {ex.Message}");
+                Plugin.Log.LogWarning($"[Paramulti] Local character clone failed for player {playerId}: {ex.Message}");
                 return null;
             }
         }
