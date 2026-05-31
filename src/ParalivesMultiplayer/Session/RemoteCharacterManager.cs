@@ -43,8 +43,6 @@ namespace ParalivesMultiplayer.Session
 
         public static void FindLocalCharacter()
         {
-            if (_localCharacterFound) return;
-
             ParalivesGameApiResolver.Resolve();
 
             // Managers not ready yet - wait silently until they are
@@ -68,6 +66,12 @@ namespace ParalivesMultiplayer.Session
                             followField = camController.GetType().GetField("FollowTarget", BindingFlags.Public | BindingFlags.Instance);
                         if (followField == null)
                             followField = camController.GetType().GetField("CurrentTarget", BindingFlags.Public | BindingFlags.Instance);
+                        if (followField == null)
+                            followField = camController.GetType().GetField("m_FollowTarget", BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (followField == null)
+                            followField = camController.GetType().GetField("_followTarget", BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (followField == null)
+                            followField = camController.GetType().GetField("m_Target", BindingFlags.NonPublic | BindingFlags.Instance);
                         if (followField != null)
                         {
                             var followObj = followField.GetValue(camController);
