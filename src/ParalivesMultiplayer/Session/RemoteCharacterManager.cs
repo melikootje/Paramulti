@@ -52,10 +52,12 @@ namespace ParalivesMultiplayer.Session
 
             try
             {
+                Plugin.Log.LogInfo("[Paramulti] FindLocalCharacter Path1: PlayerManagerInstance check");
                 // Path 1: PlayerManager HybridPlayer.SelectedCharactersGUID (list of active controlled characters)
                 if (ParalivesGameApiResolver.PlayerManagerInstance != null &&
                     ParalivesGameApiResolver.GetHybridPlayerMethod != null)
                 {
+                    Plugin.Log.LogInfo("[Paramulti] FindLocalCharacter Path1: getting HybridPlayer...");
                     var pm = ParalivesGameApiResolver.PlayerManagerInstance;
                     var player0 = ParalivesGameApiResolver.GetHybridPlayerMethod.Invoke(pm, new object[] { 0 });
                     if (player0 != null)
@@ -68,9 +70,11 @@ namespace ParalivesMultiplayer.Session
                             {
                                 var selectedCharsField = playerObj.GetType().GetField("SelectedCharactersGUID",
                                     BindingFlags.Public | BindingFlags.Instance);
+                                Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: SelectedCharsField={selectedCharsField != null}");
                                 if (selectedCharsField != null)
                                 {
                                     var selectedList = selectedCharsField.GetValue(playerObj) as System.Collections.IList;
+                                    Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: SelectedList count={selectedList?.Count ?? -1}");
                                     if (selectedList != null && selectedList.Count > 0)
                                     {
                                         var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
