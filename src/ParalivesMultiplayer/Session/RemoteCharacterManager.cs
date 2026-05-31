@@ -1509,28 +1509,66 @@ namespace ParalivesMultiplayer.Session
             }
 
             // Try to create a game-native character using the remote player's model GUID
-            // This gives us the ACTUAL character model with proper meshes and animations
-            if (msg.CharacterModelGuid != 0 || entry != null)
+            if (msg.CharacterModelGuid != 0 && ParalivesGameApiResolver.CharacterManagerInstance != null &&
+                ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod != null)
             {
-                var nativeEntry = TryCreateRemoteGameNativeCharacter(msg.PlayerId, msg.CharacterGuid,
-                    msg.CharacterModelGuid, msg.FullName, spawnPos);
-                if (nativeEntry != null && nativeEntry.ControlledTransform != null)
+                try
                 {
-                    if (entry != null && entry.ControlledTransform != null)
+                    var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+                    var newAssetChar = ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod.Invoke(charMgr,
+                        new object[] { msg.CharacterModelGuid });
+                    if (newAssetChar != null)
                     {
-                        // Parent the game-native visual to our fallback cube
-                        nativeEntry.ControlledTransform.SetParent(entry.ControlledTransform, false);
-                        nativeEntry.ControlledTransform.localPosition = Vector3.zero;
-                        nativeEntry.ControlledTransform.localRotation = Quaternion.identity;
-                        Plugin.Log.LogInfo($"[Paramulti] Parented game-native character to fallback cube for player {msg.PlayerId}");
+                        // Get GUID
+                        var guidProp = newAssetChar.GetType().GetProperty("GUID");
+                        var nativeGuid = guidProp != null ? (ulong)guidProp.GetValue(newAssetChar) : msg.CharacterGuid;
+
+                        // Override GUID with the remote player's known GUID
+                        if (guidProp != null)
+                            guidProp.SetValue(newAssetChar, msg.CharacterGuid);
+
+                        // Set name
+                        var dataProp = newAssetChar.GetType().GetProperty("Data");
+                        var data = dataProp?.GetValue(newAssetChar);
+                        if (data != null)
+                        {
+                            var firstNameField = data.GetType().GetField("FirstName");
+                            firstNameField?.SetValue(data, msg.FullName);
+                            var fullNameField = data.GetType().GetField("FullName");
+                            fullNameField?.SetValue(data, msg.FullName);
+                        }
+
+                        // Register character
+                        var regMethod = ParalivesGameApiResolver.RegisterCharacterMethod;
+                        if (regMethod != null)
+                            regMethod.Invoke(charMgr, new object[] { newAssetChar });
+
+                        // Load visual
+                        var loadVisualMethod = ParalivesGameApiResolver.LoadCharacterVisualMethod;
+                        if (loadVisualMethod != null)
+                        {
+                            var visual = loadVisualMethod.Invoke(charMgr, new object[] { msg.CharacterGuid });
+                            var visualTransform = ExtractTransform(visual);
+                            if (visualTransform != null)
+                            {
+                                if (entry != null && entry.ControlledTransform != null)
+                                {
+                                    visualTransform.SetParent(entry.ControlledTransform, false);
+                                    visualTransform.localPosition = Vector3.zero;
+                                    visualTransform.localRotation = Quaternion.identity;
+                                }
+                                else
+                                {
+                                    visualTransform.position = spawnPos;
+                                    visualTransform.rotation = msg.LastKnownRotation.ToUnity();
+                                }
+                            }
+                        }
                     }
-                    else
-                    {
-                        entry = nativeEntry;
-                        entry.CharacterGuid = msg.CharacterGuid;
-                        entry.ControlledTransform.position = spawnPos;
-                        entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
-                    }
+                }
+                catch
+                {
+                    // Silently continue with fallback cube
                 }
             }
 
@@ -1595,7 +1633,7 @@ namespace ParalivesMultiplayer.Session
                     return null;
                 }
 
-                Plugin.Log.LogInfo($"[Paramulti] Creating remote game-native character for player {playerId} with model GUID={effectiveModel:X}");
+                Plugin.Log.LogInfo("[Paramulti] Creating remote game-native character for player " + playerId + " with model GUID=" + effectiveModel.ToString("X"));
 
                 var newAssetChar = createMethod.Invoke(charMgr, new object[] { effectiveModel });
                 if (newAssetChar == null) return null;
