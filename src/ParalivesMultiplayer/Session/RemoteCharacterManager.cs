@@ -500,6 +500,7 @@ namespace ParalivesMultiplayer.Session
                 var meshes = go.GetComponentsInChildren<MeshRenderer>(true).Length;
 
                 StripInputComponents(transform);
+                ForceStandardMaterials(go);
                 AttachDebugMarker(go, playerId, playerName);
 
                 Plugin.Log.LogInfo($"[Paramulti] Cloned local character for player {playerId}: {go.name} at {spawnPos} (Animator={animators}, SkinnedMesh={skinned}, MeshRenderer={meshes})");
@@ -1072,6 +1073,60 @@ namespace ParalivesMultiplayer.Session
             if (stripped > 0)
             {
                 Plugin.Log.LogInfo($"[Paramulti] Stripped {stripped} input/control components from remote character (Animator KEPT for rendering)");
+            }
+        }
+
+        static void ForceStandardMaterials(GameObject root)
+        {
+            if (root == null) return;
+            try
+            {
+                var shader = Shader.Find("Standard");
+                if (shader == null) shader = Shader.Find("Diffuse");
+                if (shader == null) return;
+
+                int replaced = 0;
+                var skinnedRenderers = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+                foreach (var rend in skinnedRenderers)
+                {
+                    if (rend == null || !rend.enabled) continue;
+                    var mats = rend.sharedMaterials;
+                    if (mats == null || mats.Length == 0) continue;
+                    var newMats = new Material[mats.Length];
+                    for (int i = 0; i < mats.Length; i++)
+                    {
+                        newMats[i] = new Material(shader);
+                        newMats[i].color = Color.white;
+                    }
+                    rend.materials = newMats;
+                    replaced += mats.Length;
+                }
+
+                var meshRenderers = root.GetComponentsInChildren<MeshRenderer>(true);
+                foreach (var rend in meshRenderers)
+                {
+                    if (rend == null || !rend.enabled) continue;
+                    if (rend.gameObject.name.StartsWith("[DebugMarker")) continue;
+                    if (rend.gameObject.name.StartsWith("[Nameplate")) continue;
+                    if (rend.gameObject.name.StartsWith("[Beam")) continue;
+                    var mats = rend.sharedMaterials;
+                    if (mats == null || mats.Length == 0) continue;
+                    var newMats = new Material[mats.Length];
+                    for (int i = 0; i < mats.Length; i++)
+                    {
+                        newMats[i] = new Material(shader);
+                        newMats[i].color = Color.white;
+                    }
+                    rend.materials = newMats;
+                    replaced += mats.Length;
+                }
+
+                if (replaced > 0)
+                    Plugin.Log.LogInfo($"[Paramulti] ForceStandardMaterials: replaced {replaced} materials on cloned character");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] ForceStandardMaterials error: {ex.Message}");
             }
         }
 
