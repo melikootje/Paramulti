@@ -1615,11 +1615,13 @@ namespace ParalivesMultiplayer.Session
 
             // Step 2: Try game-native character using AssetManager.GetCharacter + MemberwiseClone
             // (NOT CreateCharacterByModelGUID which crashes at runtime)
+            Plugin.Log.LogInfo($"[Paramulti] Step2 condition: modelGuid={msg.CharacterModelGuid:X}, AssetManager={ParalivesGameApiResolver.AssetManagerInstance != null}, GetCharacter={ParalivesGameApiResolver.GetCharacterMethod != null}, CharMgr={ParalivesGameApiResolver.CharacterManagerInstance != null}, LoadVis={ParalivesGameApiResolver.LoadCharacterVisualMethod != null}");
             if (msg.CharacterModelGuid != 0 && ParalivesGameApiResolver.AssetManagerInstance != null &&
                 ParalivesGameApiResolver.GetCharacterMethod != null &&
                 ParalivesGameApiResolver.CharacterManagerInstance != null &&
                 ParalivesGameApiResolver.LoadCharacterVisualMethod != null)
             {
+                Plugin.Log.LogInfo("[Paramulti] Step2: entering game-native character creation...");
                 try
                 {
                     var am = ParalivesGameApiResolver.AssetManagerInstance;
