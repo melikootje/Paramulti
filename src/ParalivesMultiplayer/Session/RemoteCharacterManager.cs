@@ -1702,7 +1702,16 @@ namespace ParalivesMultiplayer.Session
                                     var visualProp = clonedChar.GetType().GetProperty("Visual");
                                     if (visualProp != null) visual = visualProp.GetValue(clonedChar);
                                     Plugin.Log.LogInfo($"[Paramulti] Step2: clonedChar.Visual={(visual != null ? visual.ToString() : "null")}");
-                                    if (visual == null)
+
+                                    // Get the runtime CharacterVisual from the CharacterManager
+                                    var runtimeVisual = ParalivesGameApiResolver.GetLoadedCharacterVisualMethod.Invoke(
+                                        charMgr, new object[] { msg.CharacterGuid });
+                                    Plugin.Log.LogInfo($"[Paramulti] Step2: GetLoadedCharacterVisual({msg.CharacterGuid:X})={(runtimeVisual != null ? runtimeVisual.ToString() : "null")}");
+                                    if (runtimeVisual != null)
+                                    {
+                                        visual = runtimeVisual;
+                                    }
+                                    else if (visual == null)
                                     {
                                         visual = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(
                                             charMgr, new object[] { msg.CharacterGuid });
