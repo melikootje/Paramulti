@@ -52,7 +52,7 @@ namespace ParalivesMultiplayer.Session
 
             try
             {
-                // Path 1: PlayerManager HybridPlayer CameraCurrentCharacterFollowTarget (most authoritative)
+                // Path 1: PlayerManager HybridPlayer — log Player object fields to find follow target
                 if (ParalivesGameApiResolver.PlayerManagerInstance != null &&
                     ParalivesGameApiResolver.GetHybridPlayerMethod != null)
                 {
@@ -60,59 +60,44 @@ namespace ParalivesMultiplayer.Session
                     var player0 = ParalivesGameApiResolver.GetHybridPlayerMethod.Invoke(pm, new object[] { 0 });
                     if (player0 != null)
                     {
-                        var followField = player0.GetType().GetField("CameraCurrentCharacterFollowTarget",
-                            BindingFlags.Public | BindingFlags.Instance);
-                        if (followField != null)
+                        // Get the Player property from HybridPlayer
+                        var playerProp = player0.GetType().GetProperty("Player");
+                        if (playerProp != null)
                         {
-                            var followGuid = (ulong)followField.GetValue(player0);
-                            Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: HybridPlayer.CameraCurrentCharacterFollowTarget = {followGuid:X}");
-                            if (followGuid != 0)
+                            var playerObj = playerProp.GetValue(player0);
+                            if (playerObj != null)
                             {
-                                var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-                                var cmType = ParalivesGameApiResolver.CharacterManagerType;
-                                var charsProp = cmType.GetProperty("Characters");
-                                if (charsProp != null)
+                                // Log Player type fields to find follow target
+                                var playerType = playerObj.GetType();
+                                Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: Player type fields:");
+                                foreach (var f in playerType.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic))
                                 {
-                                    var chars = charsProp.GetValue(charMgr) as System.Collections.IList;
-                                    if (chars != null)
+                                    try
                                     {
-                                        Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: scanning {chars.Count} characters for GUID match");
-                                        foreach (var c in chars)
-                                        {
-                                            var guidProp = c.GetType().GetProperty("GUID");
-                                            var guid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
-                                            if (guid == followGuid)
-                                            {
-                                                var visualProp = c.GetType().GetProperty("Visual");
-                                                var visual = visualProp?.GetValue(c);
-                                                Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: matched character GUID={guid:X}, visual type={visual?.GetType().Name ?? "null"}");
-                                                var t = ExtractTransform(visual);
-                                                if (t != null && IsValidLocalTransform(t))
-                                                {
-                                                    _localCharacterTransform = t;
-                                                    _localCharacterFound = true;
-                                                    Plugin.Log.LogInfo($"[Paramulti] Found local character via HybridPlayer CameraCurrentCharacterFollowTarget GUID={followGuid:X}: {t.gameObject.name}");
-                                                    return;
-                                                }
-                                                else
-                                                {
-                                                    Plugin.Log.LogWarning($"[Paramulti] FindLocalCharacter Path1: ExtractTransform returned null or IsValidLocalTransform failed for matched character");
-                                                }
-                                            }
-                                        }
-                                        Plugin.Log.LogWarning($"[Paramulti] FindLocalCharacter Path1: no character in CharacterManager matched followGuid={followGuid:X}");
+                                        var val = f.GetValue(playerObj);
+                                        Plugin.Log.LogInfo($"  {f.FieldType.Name} {f.Name} = {val}");
                                     }
+                                    catch { }
+                                }
+                                Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: Player type properties:");
+                                foreach (var p in playerType.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic))
+                                {
+                                    try
+                                    {
+                                        var val = p.GetValue(playerObj);
+                                        Plugin.Log.LogInfo($"  {p.PropertyType.Name} {p.Name} = {val}");
+                                    }
+                                    catch { }
+                                }
+
+                                // Also check CharacterVisualInEdition on HybridPlayer directly
+                                var cveField = player0.GetType().GetField("CharacterVisualInEdition", BindingFlags.Public | BindingFlags.Instance);
+                                if (cveField != null)
+                                {
+                                    var cve = cveField.GetValue(player0);
+                                    Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: HybridPlayer.CharacterVisualInEdition = {cve?.GetType().Name ?? "null"}");
                                 }
                             }
-                            else
-                            {
-                                Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: followGuid is 0 (no character selected)");
-                            }
-                        }
-                        else
-                        {
-                            Plugin.Log.LogWarning($"[Paramulti] FindLocalCharacter Path1: CameraCurrentCharacterFollowTarget field not found on HybridPlayer");
-                            ParalivesGameApiResolver.LogHybridPlayerFields(player0);
                         }
                     }
                 }
