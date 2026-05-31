@@ -304,34 +304,84 @@ namespace ParalivesMultiplayer.Session
 
         static ulong GetLocalCharacterModelGuid()
         {
-            if (_localCharacterTransform == null || ParalivesGameApiResolver.CharacterManagerInstance == null)
-                return 0;
+            if (_localCharacterTransform == null) return 0;
 
             try
             {
-                var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-                var cmType = ParalivesGameApiResolver.CharacterManagerType;
-                var charsProp = cmType.GetProperty("Characters");
-                if (charsProp == null) return 0;
-                var chars = charsProp.GetValue(charMgr) as System.Collections.IList;
-                if (chars == null) return 0;
-
-                foreach (var c in chars)
+                // Method 1: Look for CharacterVisual component on local transform and read its Data
+                foreach (var comp in _localCharacterTransform.GetComponents<Component>())
                 {
-                    var visualProp = c.GetType().GetProperty("Visual");
-                    var visual = visualProp?.GetValue(c);
-                    var t = ExtractTransform(visual);
-                    if (t == _localCharacterTransform)
+                    if (comp == null || comp.GetType().Name != "CharacterVisual") continue;
+
+                    // CharacterVisual should have a Data field/property with CurrentCharacterModelGUID
+                    var dataField = comp.GetType().GetField("Data");
+                    var dataProp = comp.GetType().GetProperty("Data");
+                    object data = dataField?.GetValue(comp) ?? dataProp?.GetValue(comp);
+                    if (data == null)
                     {
-                        var dataProp = c.GetType().GetProperty("Data");
-                        var data = dataProp?.GetValue(c);
-                        if (data != null)
+                        // Maybe Data is on a different component
+                        continue;
+                    }
+
+                    var modelField = data.GetType().GetField("CurrentCharacterModelGUID");
+                    if (modelField != null)
+                    {
+                        var guid = (ulong)modelField.GetValue(data);
+                        Plugin.Log.LogInfo($"[Paramulti] Got model GUID via CharacterVisual.Data: {guid:X}");
+                        return guid;
+                    }
+
+                    // Fall back to field named "GUID" on the character data
+                    var characterModelField = data.GetType().GetField("CharacterModelGUID");
+                    if (characterModelField != null)
+                    {
+                        var guid = (ulong)characterModelField.GetValue(data);
+                        Plugin.Log.LogInfo($"[Paramulti] Got model GUID via CharacterModelGUID: {guid:X}");
+                        return guid;
+                    }
+                }
+
+                // Method 2: Scan CharacterManager.Characters by comparing GUIDs
+                if (ParalivesGameApiResolver.CharacterManagerInstance != null)
+                {
+                    var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+                    var cmType = ParalivesGameApiResolver.CharacterManagerType;
+                    var charsProp = cmType.GetProperty("Characters");
+                    if (charsProp != null)
+                    {
+                        var chars = charsProp.GetValue(charMgr) as System.Collections.IList;
+                        if (chars != null)
                         {
-                            var modelField = data.GetType().GetField("CurrentCharacterModelGUID");
-                            if (modelField != null)
-                                return (ulong)modelField.GetValue(data);
+                            // Try to find the matching character by looking at each character's visual
+                            foreach (var c in chars)
+                            {
+                                var cmGuidProp = c.GetType().GetProperty("GUID");
+                                if (cmGuidProp == null) continue;
+                                var cmGuid = (ulong)cmGuidProp.GetValue(c);
+                                if (cmGuid == 0) continue;
+
+                                var visualProp = c.GetType().GetProperty("Visual");
+                                var visual = visualProp?.GetValue(c);
+                                var t = ExtractTransform(visual);
+
+                                // Compare transforms OR check if the character's GUID is the currently selected one
+                                if (t != null && t == _localCharacterTransform)
+                                {
+                                    var dataProp = c.GetType().GetProperty("Data");
+                                    var data = dataProp?.GetValue(c);
+                                    if (data != null)
+                                    {
+                                        var modelField = data.GetType().GetField("CurrentCharacterModelGUID");
+                                        if (modelField != null)
+                                        {
+                                            var guid = (ulong)modelField.GetValue(data);
+                                            Plugin.Log.LogInfo($"[Paramulti] Got model GUID via CharacterManager match: {guid:X}");
+                                            return guid;
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        break;
                     }
                 }
             }
@@ -339,6 +389,8 @@ namespace ParalivesMultiplayer.Session
             {
                 Plugin.Log.LogWarning($"[Paramulti] GetLocalCharacterModelGuid error: {ex.Message}");
             }
+
+            Plugin.Log.LogWarning("[Paramulti] Could not determine local character model GUID (will use 0)");
             return 0;
         }
 
@@ -1406,6 +1458,7 @@ namespace ParalivesMultiplayer.Session
                 ? _localCharacterTransform.rotation.FromUnity()
                 : new NetQuaternion(0f, 0f, 0f, 1f);
 
+            var modelGuid = GetLocalCharacterModelGuid();
             var msg = new ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync
             {
                 PlayerId = MultiplayerSession.LocalPlayerId,
@@ -1414,14 +1467,14 @@ namespace ParalivesMultiplayer.Session
                 FullName = $"Player_{MultiplayerSession.LocalPlayerId}",
                 Age = 0f,
                 SpeciesGuid = 0UL,
-                CharacterModelGuid = 0UL,
+                CharacterModelGuid = modelGuid,
                 CurrentPostureGuid = 0UL,
                 IsDeadOrTakenAway = false,
                 LastKnownPosition = pos,
                 LastKnownRotation = rot
             };
 
-            Plugin.Log.LogInfo($"[Paramulti] Built MINIMAL character data sync: GUID={guid:X}, Name={msg.FullName}, pos={pos}");
+            Plugin.Log.LogInfo($"[Paramulti] Built MINIMAL character data sync: GUID={guid:X}, Name={msg.FullName}, Model={modelGuid:X}, pos={pos}");
             return msg;
         }
 
@@ -1436,6 +1489,7 @@ namespace ParalivesMultiplayer.Session
             var pos = _localCharacterTransform.position.FromUnity();
             var rot = _localCharacterTransform.rotation.FromUnity();
 
+            var modelGuid = GetLocalCharacterModelGuid();
             var msg = new ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync
             {
                 PlayerId = MultiplayerSession.LocalPlayerId,
@@ -1444,14 +1498,14 @@ namespace ParalivesMultiplayer.Session
                 FullName = $"Player_{MultiplayerSession.LocalPlayerId}",
                 Age = 0f,
                 SpeciesGuid = 0UL,
-                CharacterModelGuid = 0UL,
+                CharacterModelGuid = modelGuid,
                 CurrentPostureGuid = 0UL,
                 IsDeadOrTakenAway = false,
                 LastKnownPosition = pos,
                 LastKnownRotation = rot
             };
 
-            Plugin.Log.LogInfo($"[Paramulti] Built FALLBACK character data sync: GUID={guid:X}, Name={msg.FullName}, transform={goName}, pos={pos}");
+            Plugin.Log.LogInfo($"[Paramulti] Built FALLBACK character data sync: GUID={guid:X}, Name={msg.FullName}, Model={modelGuid:X}, transform={goName}, pos={pos}");
             return msg;
         }
 
@@ -1495,8 +1549,33 @@ namespace ParalivesMultiplayer.Session
                 entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
             }
 
-            // Optionally try to enhance with actual character model (prefab clone)
-            // Parent it to the fallback cube so the cube remains as backup visibility
+            // Try to create a game-native character using the remote player's model GUID
+            // This gives us the ACTUAL character model with proper meshes and animations
+            if (msg.CharacterModelGuid != 0 || entry != null)
+            {
+                var nativeEntry = TryCreateRemoteGameNativeCharacter(msg.PlayerId, msg.CharacterGuid,
+                    msg.CharacterModelGuid, msg.FullName, spawnPos);
+                if (nativeEntry != null && nativeEntry.ControlledTransform != null)
+                {
+                    if (entry != null && entry.ControlledTransform != null)
+                    {
+                        // Parent the game-native visual to our fallback cube
+                        nativeEntry.ControlledTransform.SetParent(entry.ControlledTransform, false);
+                        nativeEntry.ControlledTransform.localPosition = Vector3.zero;
+                        nativeEntry.ControlledTransform.localRotation = Quaternion.identity;
+                        Plugin.Log.LogInfo($"[Paramulti] Parented game-native character to fallback cube for player {msg.PlayerId}");
+                    }
+                    else
+                    {
+                        entry = nativeEntry;
+                        entry.CharacterGuid = msg.CharacterGuid;
+                        entry.ControlledTransform.position = spawnPos;
+                        entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
+                    }
+                }
+            }
+
+            // Optionally try to enhance with prefab clone (as additional backup)
             var prefabEntry = TryCreatePrefabClone(msg.PlayerId, msg.FullName, spawnPos);
             if (prefabEntry != null && prefabEntry.ControlledTransform != null)
             {
