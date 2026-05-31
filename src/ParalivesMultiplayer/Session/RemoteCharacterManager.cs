@@ -45,85 +45,14 @@ namespace ParalivesMultiplayer.Session
         {
             ParalivesGameApiResolver.Resolve();
 
-            // Managers not ready yet - wait silently until they are
             if (ParalivesGameApiResolver.CharacterManagerInstance == null) return;
 
-            // Throttle: only retry finding character every FindRetryInterval seconds
             if (Time.time - _lastFindAttemptTime < FindRetryInterval) return;
             _lastFindAttemptTime = Time.time;
 
             try
             {
-                // Path 1: Use main camera follow target (most reliable in live world)
-                var mainCam = UnityEngine.Camera.main;
-                if (mainCam != null)
-                {
-                    var camController = mainCam.GetComponent("CameraController");
-                    if (camController != null)
-                    {
-                        var followField = camController.GetType().GetField("Target", BindingFlags.Public | BindingFlags.Instance);
-                        if (followField == null)
-                            followField = camController.GetType().GetField("FollowTarget", BindingFlags.Public | BindingFlags.Instance);
-                        if (followField == null)
-                            followField = camController.GetType().GetField("CurrentTarget", BindingFlags.Public | BindingFlags.Instance);
-                        if (followField == null)
-                            followField = camController.GetType().GetField("m_FollowTarget", BindingFlags.NonPublic | BindingFlags.Instance);
-                        if (followField == null)
-                            followField = camController.GetType().GetField("_followTarget", BindingFlags.NonPublic | BindingFlags.Instance);
-                        if (followField == null)
-                            followField = camController.GetType().GetField("m_Target", BindingFlags.NonPublic | BindingFlags.Instance);
-                        if (followField != null)
-                        {
-                            var followObj = followField.GetValue(camController);
-                            Transform ft = null;
-                            if (followObj is Transform t) ft = t;
-                            else if (followObj is GameObject g) ft = g.transform;
-
-                            if (ft != null && IsValidLocalTransform(ft))
-                            {
-                                _localCharacterTransform = ft;
-                                _localCharacterFound = true;
-                                Plugin.Log.LogInfo($"[Paramulti] Found local character via camera follow target: {ft.gameObject.name}");
-                                return;
-                            }
-                        }
-                    }
-                }
-
-                // Path 2: Resolve runtime visual from HouseholdManager character GUIDs
-                if (ParalivesGameApiResolver.HouseholdManagerInstance != null &&
-                    ParalivesGameApiResolver.GetCharactersInCurrentHouseholdMethod != null &&
-                    ParalivesGameApiResolver.GetLoadedCharacterVisualMethod != null)
-                {
-                    var hm = ParalivesGameApiResolver.HouseholdManagerInstance;
-                    var chars = ParalivesGameApiResolver.GetCharactersInCurrentHouseholdMethod.Invoke(hm, null) as System.Collections.IList;
-                    if (chars != null && chars.Count > 0)
-                    {
-                        var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-                        var loadedVisMethod = ParalivesGameApiResolver.GetLoadedCharacterVisualMethod;
-                        foreach (var c in chars)
-                        {
-                            var guidProp = c.GetType().GetProperty("GUID");
-                            var guid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
-                            if (guid == 0) continue;
-
-                            var runtimeVisual = loadedVisMethod.Invoke(charMgr, new object[] { guid });
-                            if (runtimeVisual != null)
-                            {
-                                var t = ExtractTransform(runtimeVisual);
-                                if (t != null && IsValidLocalTransform(t))
-                                {
-                                    _localCharacterTransform = t;
-                                    _localCharacterFound = true;
-                                    Plugin.Log.LogInfo($"[Paramulti] Found local character via GetLoadedCharacterVisual GUID={guid:X}: {t.gameObject.name}");
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Path 3: CharacterManager + PlayerManager HybridPlayer via CameraCurrentCharacterFollowTarget
+                // Path 1: PlayerManager HybridPlayer CameraCurrentCharacterFollowTarget (most authoritative)
                 if (ParalivesGameApiResolver.PlayerManagerInstance != null &&
                     ParalivesGameApiResolver.GetHybridPlayerMethod != null)
                 {
@@ -159,13 +88,82 @@ namespace ParalivesMultiplayer.Session
                                                 {
                                                     _localCharacterTransform = t;
                                                     _localCharacterFound = true;
-                                                    Plugin.Log.LogInfo($"[Paramulti] Found local character via CameraCurrentCharacterFollowTarget GUID={followGuid:X}: {t.gameObject.name}");
+                                                    Plugin.Log.LogInfo($"[Paramulti] Found local character via HybridPlayer CameraCurrentCharacterFollowTarget GUID={followGuid:X}: {t.gameObject.name}");
                                                     return;
                                                 }
                                             }
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+
+                // Path 2: HouseholdManager — find first household member with a loaded visual
+                if (ParalivesGameApiResolver.HouseholdManagerInstance != null &&
+                    ParalivesGameApiResolver.GetCharactersInCurrentHouseholdMethod != null &&
+                    ParalivesGameApiResolver.GetLoadedCharacterVisualMethod != null)
+                {
+                    var hm = ParalivesGameApiResolver.HouseholdManagerInstance;
+                    var chars = ParalivesGameApiResolver.GetCharactersInCurrentHouseholdMethod.Invoke(hm, null) as System.Collections.IList;
+                    if (chars != null && chars.Count > 0)
+                    {
+                        var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+                        var loadedVisMethod = ParalivesGameApiResolver.GetLoadedCharacterVisualMethod;
+                        foreach (var c in chars)
+                        {
+                            var guidProp = c.GetType().GetProperty("GUID");
+                            var guid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
+                            if (guid == 0) continue;
+
+                            var runtimeVisual = loadedVisMethod.Invoke(charMgr, new object[] { guid });
+                            if (runtimeVisual != null)
+                            {
+                                var t = ExtractTransform(runtimeVisual);
+                                if (t != null && IsValidLocalTransform(t))
+                                {
+                                    _localCharacterTransform = t;
+                                    _localCharacterFound = true;
+                                    Plugin.Log.LogInfo($"[Paramulti] Found local character via HouseholdManager GUID={guid:X}: {t.gameObject.name}");
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Path 3: Camera follow target — fallback, must be in CharacterManager list
+                var mainCam = UnityEngine.Camera.main;
+                if (mainCam != null)
+                {
+                    var camController = mainCam.GetComponent("CameraController");
+                    if (camController != null)
+                    {
+                        var followField = camController.GetType().GetField("Target", BindingFlags.Public | BindingFlags.Instance);
+                        if (followField == null)
+                            followField = camController.GetType().GetField("FollowTarget", BindingFlags.Public | BindingFlags.Instance);
+                        if (followField == null)
+                            followField = camController.GetType().GetField("CurrentTarget", BindingFlags.Public | BindingFlags.Instance);
+                        if (followField == null)
+                            followField = camController.GetType().GetField("m_FollowTarget", BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (followField == null)
+                            followField = camController.GetType().GetField("_followTarget", BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (followField == null)
+                            followField = camController.GetType().GetField("m_Target", BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (followField != null)
+                        {
+                            var followObj = followField.GetValue(camController);
+                            Transform ft = null;
+                            if (followObj is Transform t) ft = t;
+                            else if (followObj is GameObject g) ft = g.transform;
+
+                            if (ft != null && IsValidLocalTransform(ft) && IsTransformInCharacterManager(ft))
+                            {
+                                _localCharacterTransform = ft;
+                                _localCharacterFound = true;
+                                Plugin.Log.LogInfo($"[Paramulti] Found local character via camera follow target: {ft.gameObject.name}");
+                                return;
                             }
                         }
                     }
@@ -223,6 +221,25 @@ namespace ParalivesMultiplayer.Session
             {
                 Plugin.Log.LogError($"[Paramulti] Error finding local character: {ex.Message}");
             }
+        }
+
+        static bool IsTransformInCharacterManager(Transform t)
+        {
+            if (ParalivesGameApiResolver.CharacterManagerInstance == null) return false;
+            var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+            var cmType = ParalivesGameApiResolver.CharacterManagerType;
+            var charsProp = cmType.GetProperty("Characters");
+            if (charsProp == null) return false;
+            var chars = charsProp.GetValue(charMgr) as System.Collections.IList;
+            if (chars == null) return false;
+            foreach (var c in chars)
+            {
+                var visualProp = c.GetType().GetProperty("Visual");
+                var visual = visualProp?.GetValue(c);
+                var vt = ExtractTransform(visual);
+                if (vt == t) return true;
+            }
+            return false;
         }
 
         static bool IsValidLocalTransform(Transform t)
