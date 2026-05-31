@@ -308,68 +308,22 @@ namespace ParalivesMultiplayer.Session
 
             try
             {
-                // Method 1: Look for AssetCharacterVisual component on the local transform's GameObject
-                // This is the data asset that has a Data property with CurrentCharacterModelGUID
+                // Step 1: Get the CharacterGUID from the CharacterVisual component
+                ulong characterGuid = 0;
                 foreach (var comp in _localCharacterTransform.GetComponents<Component>())
                 {
-                    if (comp == null) continue;
-                    var typeName = comp.GetType().Name;
-
-                    // AssetCharacterVisual has Data -> CurrentCharacterModelGUID
-                    if (typeName == "AssetCharacterVisual")
+                    if (comp == null || comp.GetType().Name != "CharacterVisual") continue;
+                    var guidProp = comp.GetType().GetProperty("CharacterGUID");
+                    if (guidProp != null)
                     {
-                        var dataField = comp.GetType().GetField("Data");
-                        var dataProp = comp.GetType().GetProperty("Data");
-                        object data = dataField?.GetValue(comp) ?? dataProp?.GetValue(comp);
-                        if (data != null)
-                        {
-                            var modelField = data.GetType().GetField("CurrentCharacterModelGUID");
-                            if (modelField != null)
-                            {
-                                var guid = (ulong)modelField.GetValue(data);
-                                Plugin.Log.LogInfo($"[Paramulti] Got model GUID via AssetCharacterVisual.Data: {guid:X}");
-                                return guid;
-                            }
-                        }
-                    }
-
-                    // CharacterVisual might have a reference to the asset/character
-                    if (typeName == "CharacterVisual")
-                    {
-                        // Try various field names that might contain the character data or GUID
-                        foreach (var fieldName in new[] { "CharacterData", "AssetCharacterData", "m_CharacterData", 
-                                                           "characterData", "Data", "Asset" })
-                        {
-                            var f = comp.GetType().GetField(fieldName, 
-                                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | 
-                                System.Reflection.BindingFlags.Instance);
-                            if (f == null) continue;
-                            var val = f.GetValue(comp);
-                            if (val == null) continue;
-
-                            // Try to get CurrentCharacterModelGUID from whatever we found
-                            var mf = val.GetType().GetField("CurrentCharacterModelGUID");
-                            if (mf != null)
-                            {
-                                var guid = (ulong)mf.GetValue(val);
-                                Plugin.Log.LogInfo($"[Paramulti] Got model GUID via CharacterVisual.{fieldName}: {guid:X}");
-                                return guid;
-                            }
-
-                            // Try CharacterModelGUID as alternative
-                            var mgf = val.GetType().GetField("CharacterModelGUID");
-                            if (mgf != null)
-                            {
-                                var guid = (ulong)mgf.GetValue(val);
-                                Plugin.Log.LogInfo($"[Paramulti] Got model GUID via CharacterVisual.{fieldName}.CharacterModelGUID: {guid:X}");
-                                return guid;
-                            }
-                        }
+                        characterGuid = (ulong)guidProp.GetValue(comp);
+                        Plugin.Log.LogInfo($"[Paramulti] Got CharacterGUID from CharacterVisual: {characterGuid:X}");
+                        break;
                     }
                 }
 
-                // Method 2: Scan CharacterManager.Characters by comparing GUIDs
-                if (ParalivesGameApiResolver.CharacterManagerInstance != null)
+                // Step 2: Use the character GUID to find the matching AssetCharacter in CharacterManager
+                if (characterGuid != 0 && ParalivesGameApiResolver.CharacterManagerInstance != null)
                 {
                     var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
                     var cmType = ParalivesGameApiResolver.CharacterManagerType;
@@ -379,21 +333,14 @@ namespace ParalivesMultiplayer.Session
                         var chars = charsProp.GetValue(charMgr) as System.Collections.IList;
                         if (chars != null)
                         {
-                            // Try to find the matching character by looking at each character's visual
                             foreach (var c in chars)
                             {
                                 var cmGuidProp = c.GetType().GetProperty("GUID");
                                 if (cmGuidProp == null) continue;
                                 var cmGuid = (ulong)cmGuidProp.GetValue(c);
-                                if (cmGuid == 0) continue;
-
-                                var visualProp = c.GetType().GetProperty("Visual");
-                                var visual = visualProp?.GetValue(c);
-                                var t = ExtractTransform(visual);
-
-                                // Compare transforms OR check if the character's GUID is the currently selected one
-                                if (t != null && t == _localCharacterTransform)
+                                if (cmGuid == characterGuid)
                                 {
+                                    // Found the matching character! Get its Data.CurrentCharacterModelGUID
                                     var dataProp = c.GetType().GetProperty("Data");
                                     var data = dataProp?.GetValue(c);
                                     if (data != null)
@@ -401,11 +348,20 @@ namespace ParalivesMultiplayer.Session
                                         var modelField = data.GetType().GetField("CurrentCharacterModelGUID");
                                         if (modelField != null)
                                         {
-                                            var guid = (ulong)modelField.GetValue(data);
-                                            Plugin.Log.LogInfo($"[Paramulti] Got model GUID via CharacterManager match: {guid:X}");
-                                            return guid;
+                                            var modelGuid = (ulong)modelField.GetValue(data);
+                                            Plugin.Log.LogInfo($"[Paramulti] Got model GUID={modelGuid:X} from CharacterManager character GUID={characterGuid:X}");
+                                            return modelGuid;
+                                        }
+                                        // Fallback: try CharacterModelGUID on Data
+                                        var cmField = data.GetType().GetField("CharacterModelGUID");
+                                        if (cmField != null)
+                                        {
+                                            var modelGuid = (ulong)cmField.GetValue(data);
+                                            Plugin.Log.LogInfo($"[Paramulti] Got model GUID={modelGuid:X} via CharacterModelGUID field");
+                                            return modelGuid;
                                         }
                                     }
+                                    break;
                                 }
                             }
                         }
@@ -415,45 +371,6 @@ namespace ParalivesMultiplayer.Session
             catch (Exception ex)
             {
                 Plugin.Log.LogWarning($"[Paramulti] GetLocalCharacterModelGuid error: {ex.Message}");
-            }
-
-            // Diagnostic: list all components on the local transform
-            try
-            {
-                var sb = new System.Text.StringBuilder();
-                sb.Append($"[Paramulti] Model GUID lookup failed. Components on '{_localCharacterTransform.gameObject.name}':");
-                foreach (var comp in _localCharacterTransform.GetComponents<Component>())
-                {
-                    if (comp == null) continue;
-                    var t = comp.GetType();
-                    sb.Append($" [{t.Name}");
-                    // List all field names of this component
-                    foreach (var f in t.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
-                    {
-                        if (f.FieldType == typeof(ulong) || f.FieldType == typeof(long) ||
-                            f.Name.IndexOf("GUID", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            f.Name.IndexOf("Model", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            f.Name.IndexOf("Data", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            try { sb.Append($" {f.Name}={f.GetValue(comp)}"); } catch { sb.Append($" {f.Name}=?"); }
-                        }
-                    }
-                    foreach (var p in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
-                    {
-                        if (p.Name.IndexOf("GUID", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            p.Name.IndexOf("Model", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            p.Name.IndexOf("Data", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            try { sb.Append($" prop:{p.Name}={p.GetValue(comp)}"); } catch { }
-                        }
-                    }
-                    sb.Append("]");
-                }
-                Plugin.Log.LogInfo(sb.ToString());
-            }
-            catch (Exception dex)
-            {
-                Plugin.Log.LogWarning($"[Paramulti] Diagnostic error: {dex.Message}");
             }
 
             Plugin.Log.LogWarning("[Paramulti] Could not determine local character model GUID (will use 0)");
