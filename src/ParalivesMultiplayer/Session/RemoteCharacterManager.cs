@@ -1542,7 +1542,8 @@ namespace ParalivesMultiplayer.Session
                 }
                 catch (Exception gnex)
                 {
-                    Plugin.Log.LogWarning($"[Paramulti] Game-native char creation error: {gnex.Message}");
+                    var inner = gnex.InnerException != null ? gnex.InnerException.Message : gnex.Message;
+                    Plugin.Log.LogWarning($"[Paramulti] Game-native char creation error: {inner}");
                 }
             }
 
