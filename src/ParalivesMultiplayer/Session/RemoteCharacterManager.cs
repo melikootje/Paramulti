@@ -522,6 +522,43 @@ namespace ParalivesMultiplayer.Session
             }
         }
 
+        static object TryFindCharacterAssetByModelGuid(ulong modelGuid)
+        {
+            try
+            {
+                var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+                if (charMgr == null) return null;
+                var charsProp = charMgr.GetType().GetProperty("Characters",
+                    BindingFlags.Public | BindingFlags.Instance);
+                var chars = charsProp?.GetValue(charMgr) as System.Collections.IList;
+                if (chars == null) return null;
+                foreach (var c in chars)
+                {
+                    var dataProp = c.GetType().GetProperty("Data");
+                    var data = dataProp?.GetValue(c);
+                    if (data == null) continue;
+                    var modelField = data.GetType().GetField("CurrentCharacterModelGUID",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (modelField == null) modelField = data.GetType().GetField("CharacterModelGUID",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (modelField == null) continue;
+                    var mg = (ulong)modelField.GetValue(data);
+                    if (mg == modelGuid)
+                    {
+                        Plugin.Log.LogInfo($"[Paramulti] TryFindCharacterAssetByModelGuid: matched model={modelGuid:X}");
+                        return c;
+                    }
+                }
+                Plugin.Log.LogInfo($"[Paramulti] TryFindCharacterAssetByModelGuid: no character found with model={modelGuid:X}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] TryFindCharacterAssetByModelGuid error: {ex.Message}");
+                return null;
+            }
+        }
+
         static RemoteCharacterEntry TryCreatePrefabClone(int playerId, string playerName, Vector3 spawnPos)
         {
             try
@@ -1613,22 +1650,24 @@ namespace ParalivesMultiplayer.Session
             entry.ControlledTransform.position = spawnPos;
             entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
 
-            // Step 2: Try game-native character using AssetManager.GetCharacter + MemberwiseClone
-            // (NOT CreateCharacterByModelGUID which crashes at runtime)
-            Plugin.Log.LogInfo($"[Paramulti] Step2 condition: modelGuid={msg.CharacterModelGuid:X}, AssetManager={ParalivesGameApiResolver.AssetManagerInstance != null}, GetCharacter={ParalivesGameApiResolver.GetCharacterMethod != null}, CharMgr={ParalivesGameApiResolver.CharacterManagerInstance != null}, LoadVis={ParalivesGameApiResolver.LoadCharacterVisualMethod != null}");
-            if (msg.CharacterModelGuid != 0 && ParalivesGameApiResolver.AssetManagerInstance != null &&
-                ParalivesGameApiResolver.GetCharacterMethod != null &&
+            // Step 2: Try game-native character — get the AssetCharacter via CharacterManager.GetCharacterByGUID
+            // (this uses character instance GUID, not model GUID)
+            Plugin.Log.LogInfo($"[Paramulti] Step2: charGuid={msg.CharacterGuid:X}, modelGuid={msg.CharacterModelGuid:X}");
+            if (msg.CharacterGuid != 0 && ParalivesGameApiResolver.GetCharacterByGUIDMethod != null &&
                 ParalivesGameApiResolver.CharacterManagerInstance != null &&
                 ParalivesGameApiResolver.LoadCharacterVisualMethod != null)
             {
-                Plugin.Log.LogInfo("[Paramulti] Step2: entering game-native character creation...");
                 try
                 {
-                    var am = ParalivesGameApiResolver.AssetManagerInstance;
                     var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-                    var assetChar = ParalivesGameApiResolver.GetCharacterMethod.Invoke(am,
-                        new object[] { msg.CharacterModelGuid });
-                    Plugin.Log.LogInfo($"[Paramulti] Step2: GetCharacter({msg.CharacterModelGuid:X})={(assetChar != null ? assetChar.ToString() : "null")}");
+                    object assetChar = ParalivesGameApiResolver.GetCharacterByGUIDMethod.Invoke(charMgr,
+                        new object[] { msg.CharacterGuid });
+                    Plugin.Log.LogInfo($"[Paramulti] Step2: GetCharacterByGUID({msg.CharacterGuid:X})={(assetChar != null ? assetChar.ToString() : "null")}");
+                    if (assetChar == null && msg.CharacterModelGuid != 0)
+                    {
+                        assetChar = TryFindCharacterAssetByModelGuid(msg.CharacterModelGuid);
+                        Plugin.Log.LogInfo($"[Paramulti] Step2: fallback TryFindCharacterAssetByModelGuid={msg.CharacterModelGuid:X}={(assetChar != null ? assetChar.ToString() : "null")}");
+                    }
                     if (assetChar != null)
                     {
                         var cloneMethod = assetChar.GetType().GetMethod("MemberwiseClone",
