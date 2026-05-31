@@ -1628,10 +1628,12 @@ namespace ParalivesMultiplayer.Session
                     var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
                     var assetChar = ParalivesGameApiResolver.GetCharacterMethod.Invoke(am,
                         new object[] { msg.CharacterModelGuid });
+                    Plugin.Log.LogInfo($"[Paramulti] Step2: GetCharacter({msg.CharacterModelGuid:X})={(assetChar != null ? assetChar.ToString() : "null")}");
                     if (assetChar != null)
                     {
                         var cloneMethod = assetChar.GetType().GetMethod("MemberwiseClone",
                             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        Plugin.Log.LogInfo($"[Paramulti] Step2: MemberwiseClone method={(cloneMethod != null ? "found" : "null")}");
                         if (cloneMethod != null)
                         {
                             var clonedChar = cloneMethod.Invoke(assetChar, null);
@@ -1651,12 +1653,15 @@ namespace ParalivesMultiplayer.Session
                                 }
 
                                 var regMethod = ParalivesGameApiResolver.RegisterCharacterMethod;
+                                Plugin.Log.LogInfo($"[Paramulti] Step2: RegisterCharacter method={(regMethod != null ? "found" : "null")}");
                                 if (regMethod != null)
                                 {
                                     regMethod.Invoke(charMgr, new object[] { clonedChar });
+                                    Plugin.Log.LogInfo($"[Paramulti] Step2: RegisterCharacter called for player {msg.PlayerId}");
 
                                     var visual = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(
                                         charMgr, new object[] { msg.CharacterGuid });
+                                    Plugin.Log.LogInfo($"[Paramulti] Step2: LoadCharacterVisual({msg.CharacterGuid:X})={(visual != null ? visual.ToString() : "null")}");
                                     var visualTransform = ExtractTransform(visual);
                                     if (visualTransform != null && entry.ControlledTransform != null)
                                     {
