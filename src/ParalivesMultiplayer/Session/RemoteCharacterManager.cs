@@ -527,30 +527,15 @@ namespace ParalivesMultiplayer.Session
                 var collider = go.GetComponent<Collider>();
                 if (collider != null) UnityEngine.Object.Destroy(collider);
 
-                // Get the existing renderer and change to bright unlit color
+                // Get the existing renderer and change to bright glowing color
                 var renderer = go.GetComponent<MeshRenderer>();
                 if (renderer != null)
                 {
                     var color = GetPlayerColor(playerId);
-                    // Try Unlit/Color first — always bright regardless of scene lighting
-                    var shader = Shader.Find("Unlit/Color");
-                    if (shader == null) shader = Shader.Find("Standard");
-                    if (shader == null) shader = Shader.Find("Diffuse");
-                    if (shader == null) shader = Shader.Find("Mobile/Diffuse");
-
-                    if (shader != null)
-                    {
-                        var mat = new Material(shader);
-                        mat.color = color;
-                        renderer.material = mat;
-                        Plugin.Log.LogInfo($"[Paramulti] Fallback proxy using shader '{shader.name}' with color {color} for player {playerId}");
-                    }
-                    else
-                    {
-                        // Fallback: just tint the existing material
-                        renderer.material.color = color;
-                        Plugin.Log.LogWarning($"[Paramulti] Fallback proxy: no shader found, tinting existing material for player {playerId}");
-                    }
+                    // Use the cube's existing Standard material — just tint it + add emission
+                    renderer.material.color = color;
+                    renderer.material.SetColor("_EmissionColor", color * 0.5f);
+                    renderer.material.EnableKeyword("_EMISSION");
                 }
 
                 StripInputComponents(transform);
