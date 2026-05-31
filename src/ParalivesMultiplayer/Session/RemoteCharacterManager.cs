@@ -52,7 +52,7 @@ namespace ParalivesMultiplayer.Session
 
             try
             {
-                // Path 1: PlayerManager HybridPlayer — log Player object fields to find follow target
+                // Path 1: PlayerManager HybridPlayer.SelectedCharactersGUID (list of active controlled characters)
                 if (ParalivesGameApiResolver.PlayerManagerInstance != null &&
                     ParalivesGameApiResolver.GetHybridPlayerMethod != null)
                 {
@@ -60,42 +60,53 @@ namespace ParalivesMultiplayer.Session
                     var player0 = ParalivesGameApiResolver.GetHybridPlayerMethod.Invoke(pm, new object[] { 0 });
                     if (player0 != null)
                     {
-                        // Get the Player property from HybridPlayer
                         var playerProp = player0.GetType().GetProperty("Player");
                         if (playerProp != null)
                         {
                             var playerObj = playerProp.GetValue(player0);
                             if (playerObj != null)
                             {
-                                // Log Player type fields to find follow target
-                                var playerType = playerObj.GetType();
-                                Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: Player type fields:");
-                                foreach (var f in playerType.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic))
+                                var selectedCharsField = playerObj.GetType().GetField("SelectedCharactersGUID",
+                                    BindingFlags.Public | BindingFlags.Instance);
+                                if (selectedCharsField != null)
                                 {
-                                    try
+                                    var selectedList = selectedCharsField.GetValue(playerObj) as System.Collections.IList;
+                                    if (selectedList != null && selectedList.Count > 0)
                                     {
-                                        var val = f.GetValue(playerObj);
-                                        Plugin.Log.LogInfo($"  {f.FieldType.Name} {f.Name} = {val}");
+                                        var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+                                        var cmType = ParalivesGameApiResolver.CharacterManagerType;
+                                        var charsProp = cmType.GetProperty("Characters");
+                                        if (charsProp != null)
+                                        {
+                                            var chars = charsProp.GetValue(charMgr) as System.Collections.IList;
+                                            if (chars != null)
+                                            {
+                                                foreach (var selectedGuid in selectedList)
+                                                {
+                                                    var guid = Convert.ToUInt64(selectedGuid);
+                                                    if (guid == 0) continue;
+                                                    foreach (var c in chars)
+                                                    {
+                                                        var guidProp = c.GetType().GetProperty("GUID");
+                                                        var charGuid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
+                                                        if (charGuid == guid)
+                                                        {
+                                                            var visualProp = c.GetType().GetProperty("Visual");
+                                                            var visual = visualProp?.GetValue(c);
+                                                            var t = ExtractTransform(visual);
+                                                            if (t != null && IsValidLocalTransform(t))
+                                                            {
+                                                                _localCharacterTransform = t;
+                                                                _localCharacterFound = true;
+                                                                Plugin.Log.LogInfo($"[Paramulti] Found local character via SelectedCharactersGUID={guid:X}: {t.gameObject.name}");
+                                                                return;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
-                                    catch { }
-                                }
-                                Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: Player type properties:");
-                                foreach (var p in playerType.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic))
-                                {
-                                    try
-                                    {
-                                        var val = p.GetValue(playerObj);
-                                        Plugin.Log.LogInfo($"  {p.PropertyType.Name} {p.Name} = {val}");
-                                    }
-                                    catch { }
-                                }
-
-                                // Also check CharacterVisualInEdition on HybridPlayer directly
-                                var cveField = player0.GetType().GetField("CharacterVisualInEdition", BindingFlags.Public | BindingFlags.Instance);
-                                if (cveField != null)
-                                {
-                                    var cve = cveField.GetValue(player0);
-                                    Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: HybridPlayer.CharacterVisualInEdition = {cve?.GetType().Name ?? "null"}");
                                 }
                             }
                         }
