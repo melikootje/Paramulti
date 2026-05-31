@@ -367,11 +367,13 @@ namespace ParalivesMultiplayer.Session
                     return null;
                 }
 
-                var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-                var createMethod = ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod;
-                if (createMethod == null)
+                // Use AssetManager.GetCharacter + MemberwiseClone instead of CreateCharacterByModelGUID
+                // (CreateCharacterByModelGUID crashes with AssetManager.CreateNewAssetPackage NRE)
+                if (ParalivesGameApiResolver.AssetManagerInstance == null ||
+                    ParalivesGameApiResolver.GetCharacterMethod == null ||
+                    ParalivesGameApiResolver.LoadCharacterVisualMethod == null)
                 {
-                    Plugin.Log.LogWarning("[Paramulti] CreateCharacterByModelGUID not resolved");
+                    Plugin.Log.LogWarning("[Paramulti] AssetManager/GetCharacter/LoadCharacterVisual not resolved for game-native spawn");
                     return null;
                 }
 
@@ -384,16 +386,38 @@ namespace ParalivesMultiplayer.Session
 
                 Plugin.Log.LogInfo($"[Paramulti] Creating game-native character for player {playerId} with model GUID={modelGuid:X}");
 
-                var newAssetChar = createMethod.Invoke(charMgr, new object[] { modelGuid });
-                if (newAssetChar == null)
+                var am = ParalivesGameApiResolver.AssetManagerInstance;
+                var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+                var assetChar = ParalivesGameApiResolver.GetCharacterMethod.Invoke(am, new object[] { modelGuid });
+                if (assetChar == null)
                 {
-                    Plugin.Log.LogWarning("[Paramulti] CreateCharacterByModelGUID returned null");
+                    Plugin.Log.LogWarning("[Paramulti] AssetManager.GetCharacter returned null");
                     return null;
                 }
 
+                var cloneMethod = assetChar.GetType().GetMethod("MemberwiseClone",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (cloneMethod == null)
+                {
+                    Plugin.Log.LogWarning("[Paramulti] MemberwiseClone not found on asset char type");
+                    return null;
+                }
+
+                var clonedChar = cloneMethod.Invoke(assetChar, null);
+                if (clonedChar == null)
+                {
+                    Plugin.Log.LogWarning("[Paramulti] MemberwiseClone returned null");
+                    return null;
+                }
+
+                // Generate a unique GUID for this remote character
+                var guid = GenerateGuidForPlayer(playerId);
+                var guidProp = clonedChar.GetType().GetProperty("GUID");
+                guidProp?.SetValue(clonedChar, guid);
+
                 // Set name
-                var dataProp = newAssetChar.GetType().GetProperty("Data");
-                var data = dataProp?.GetValue(newAssetChar);
+                var dataProp = clonedChar.GetType().GetProperty("Data");
+                var data = dataProp?.GetValue(clonedChar);
                 if (data != null)
                 {
                     var firstNameField = data.GetType().GetField("FirstName");
@@ -406,23 +430,12 @@ namespace ParalivesMultiplayer.Session
                 var regMethod = ParalivesGameApiResolver.RegisterCharacterMethod;
                 if (regMethod != null)
                 {
-                    regMethod.Invoke(charMgr, new object[] { newAssetChar });
+                    regMethod.Invoke(charMgr, new object[] { clonedChar });
                     Plugin.Log.LogInfo($"[Paramulti] Registered game-native character for player {playerId}");
                 }
 
-                // Get GUID
-                var guidProp = newAssetChar.GetType().GetProperty("GUID");
-                var guid = guidProp != null ? (ulong)guidProp.GetValue(newAssetChar) : GenerateGuidForPlayer(playerId);
-
                 // Load visual
-                var loadVisualMethod = ParalivesGameApiResolver.LoadCharacterVisualMethod;
-                if (loadVisualMethod == null)
-                {
-                    Plugin.Log.LogWarning("[Paramulti] LoadCharacterVisual not resolved");
-                    return null;
-                }
-
-                var visual = loadVisualMethod.Invoke(charMgr, new object[] { guid });
+                var visual = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(charMgr, new object[] { guid });
                 if (visual == null)
                 {
                     Plugin.Log.LogWarning("[Paramulti] LoadCharacterVisual returned null");
@@ -440,6 +453,7 @@ namespace ParalivesMultiplayer.Session
                 transform.rotation = Quaternion.identity;
 
                 StripInputComponents(transform);
+                DisablePathfinding(clonedChar);
 
                 Plugin.Log.LogInfo($"[Paramulti] Successfully spawned game-native character for player {playerId} (GUID={guid:X})");
 
@@ -447,7 +461,7 @@ namespace ParalivesMultiplayer.Session
                 {
                     PlayerId = playerId,
                     CharacterGuid = guid,
-                    GameNativeCharacter = newAssetChar,
+                    GameNativeCharacter = clonedChar,
                     ControlledTransform = transform,
                     IsGameNative = true,
                     LastKnownPosition = spawnPos,
@@ -1464,94 +1478,6 @@ namespace ParalivesMultiplayer.Session
 
             Vector3 spawnPos = msg.LastKnownPosition.ToUnity();
 
-            // Try to get a game-native character using the remote player's model GUID via AssetManager
-            // (NOT CreateCharacterByModelGUID which crashes because it tries to create asset packages)
-            if (msg.CharacterModelGuid != 0 && ParalivesGameApiResolver.AssetManagerInstance != null &&
-                ParalivesGameApiResolver.GetCharacterMethod != null &&
-                ParalivesGameApiResolver.CharacterManagerInstance != null)
-            {
-                try
-                {
-                    var am = ParalivesGameApiResolver.AssetManagerInstance;
-                    var assetChar = ParalivesGameApiResolver.GetCharacterMethod.Invoke(am,
-                        new object[] { msg.CharacterModelGuid });
-                    if (assetChar != null)
-                    {
-                        // Override GUID with the remote player's known GUID
-                        var guidProp = assetChar.GetType().GetProperty("GUID");
-                        if (guidProp != null)
-                        {
-                            // Need to clone the asset char to avoid modifying the original
-                            var cloneMethod = assetChar.GetType().GetMethod("MemberwiseClone",
-                                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                            if (cloneMethod != null)
-                            {
-                                var clonedChar = cloneMethod.Invoke(assetChar, null);
-                                if (clonedChar != null)
-                                {
-                                    // Set the GUID on the clone
-                                    var clonedGuidProp = clonedChar.GetType().GetProperty("GUID");
-                                    clonedGuidProp?.SetValue(clonedChar, msg.CharacterGuid);
-
-                                    // Set name on the clone's Data
-                                    var dataProp = clonedChar.GetType().GetProperty("Data");
-                                    var data = dataProp?.GetValue(clonedChar);
-                                    if (data != null)
-                                    {
-                                        var firstNameField = data.GetType().GetField("FirstName");
-                                        firstNameField?.SetValue(data, msg.FullName);
-                                        var fullNameField = data.GetType().GetField("FullName");
-                                        fullNameField?.SetValue(data, msg.FullName);
-                                    }
-
-                                    // Register the cloned character
-                                    var regMethod = ParalivesGameApiResolver.RegisterCharacterMethod;
-                                    if (regMethod != null)
-                                    {
-                                        regMethod.Invoke(ParalivesGameApiResolver.CharacterManagerInstance,
-                                            new object[] { clonedChar });
-
-                                        // Load its visual
-                                        var loadVisualMethod = ParalivesGameApiResolver.LoadCharacterVisualMethod;
-                                        if (loadVisualMethod != null)
-                                        {
-                                            var visual = loadVisualMethod.Invoke(
-                                                ParalivesGameApiResolver.CharacterManagerInstance,
-                                                new object[] { msg.CharacterGuid });
-                                            var visualTransform = ExtractTransform(visual);
-                                            if (visualTransform != null)
-                                            {
-                                                // Parent to existing proxy
-                                                lock (_lock)
-                                                {
-                                                    if (_remoteCharacters.TryGetValue(msg.PlayerId, out var existing) &&
-                                                        existing.ControlledTransform != null)
-                                                    {
-                                                        visualTransform.SetParent(existing.ControlledTransform, false);
-                                                        visualTransform.localPosition = Vector3.zero;
-                                                        visualTransform.localRotation = Quaternion.identity;
-                                                    }
-                                                    else
-                                                    {
-                                                        visualTransform.position = spawnPos;
-                                                        visualTransform.rotation = msg.LastKnownRotation.ToUnity();
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                catch (Exception gnex)
-                {
-                    var inner = gnex.InnerException != null ? gnex.InnerException.Message : gnex.Message;
-                    Plugin.Log.LogWarning($"[Paramulti] Asset char clone error: {inner}");
-                }
-            }
-
             // Check if we already have this character — update position instead of recreating
             lock (_lock)
             {
@@ -1574,105 +1500,90 @@ namespace ParalivesMultiplayer.Session
                 }
             }
 
-            // Always create the visible fallback cube FIRST — guaranteed to render
+            // Step 1: Always create the visible fallback cube FIRST — guaranteed to render and serves as parent
             var entry = CreateFallbackProxy(msg.PlayerId, msg.FullName, spawnPos);
-            if (entry != null)
+            if (entry == null)
             {
-                entry.CharacterGuid = msg.CharacterGuid;
-                entry.ControlledTransform.position = spawnPos;
-                entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
+                Plugin.Log.LogError($"[Paramulti] CRITICAL: Could not create fallback proxy for player {msg.PlayerId}");
+                return;
             }
+            entry.CharacterGuid = msg.CharacterGuid;
+            entry.ControlledTransform.position = spawnPos;
+            entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
 
-            // Try to create a game-native character using the remote player's model GUID
-            if (msg.CharacterModelGuid != 0 && ParalivesGameApiResolver.CharacterManagerInstance != null &&
-                ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod != null)
+            // Step 2: Try game-native character using AssetManager.GetCharacter + MemberwiseClone
+            // (NOT CreateCharacterByModelGUID which crashes at runtime)
+            if (msg.CharacterModelGuid != 0 && ParalivesGameApiResolver.AssetManagerInstance != null &&
+                ParalivesGameApiResolver.GetCharacterMethod != null &&
+                ParalivesGameApiResolver.CharacterManagerInstance != null &&
+                ParalivesGameApiResolver.LoadCharacterVisualMethod != null)
             {
                 try
                 {
+                    var am = ParalivesGameApiResolver.AssetManagerInstance;
                     var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-                    var newAssetChar = ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod.Invoke(charMgr,
+                    var assetChar = ParalivesGameApiResolver.GetCharacterMethod.Invoke(am,
                         new object[] { msg.CharacterModelGuid });
-                    if (newAssetChar != null)
+                    if (assetChar != null)
                     {
-                        // Get GUID
-                        var guidProp = newAssetChar.GetType().GetProperty("GUID");
-                        var nativeGuid = guidProp != null ? (ulong)guidProp.GetValue(newAssetChar) : msg.CharacterGuid;
-
-                        // Override GUID with the remote player's known GUID
-                        if (guidProp != null)
-                            guidProp.SetValue(newAssetChar, msg.CharacterGuid);
-
-                        // Set name
-                        var dataProp = newAssetChar.GetType().GetProperty("Data");
-                        var data = dataProp?.GetValue(newAssetChar);
-                        if (data != null)
+                        var cloneMethod = assetChar.GetType().GetMethod("MemberwiseClone",
+                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        if (cloneMethod != null)
                         {
-                            var firstNameField = data.GetType().GetField("FirstName");
-                            firstNameField?.SetValue(data, msg.FullName);
-                            var fullNameField = data.GetType().GetField("FullName");
-                            fullNameField?.SetValue(data, msg.FullName);
-                        }
-
-                        // Register character
-                        var regMethod = ParalivesGameApiResolver.RegisterCharacterMethod;
-                        if (regMethod != null)
-                            regMethod.Invoke(charMgr, new object[] { newAssetChar });
-
-                        // Load visual
-                        var loadVisualMethod = ParalivesGameApiResolver.LoadCharacterVisualMethod;
-                        if (loadVisualMethod != null)
-                        {
-                            var visual = loadVisualMethod.Invoke(charMgr, new object[] { msg.CharacterGuid });
-                            var visualTransform = ExtractTransform(visual);
-                            if (visualTransform != null)
+                            var clonedChar = cloneMethod.Invoke(assetChar, null);
+                            if (clonedChar != null)
                             {
-                                if (entry != null && entry.ControlledTransform != null)
+                                var guidProp = clonedChar.GetType().GetProperty("GUID");
+                                guidProp?.SetValue(clonedChar, msg.CharacterGuid);
+
+                                var dataProp = clonedChar.GetType().GetProperty("Data");
+                                var data = dataProp?.GetValue(clonedChar);
+                                if (data != null)
                                 {
-                                    visualTransform.SetParent(entry.ControlledTransform, false);
-                                    visualTransform.localPosition = Vector3.zero;
-                                    visualTransform.localRotation = Quaternion.identity;
+                                    var firstNameField = data.GetType().GetField("FirstName");
+                                    firstNameField?.SetValue(data, msg.FullName);
+                                    var fullNameField = data.GetType().GetField("FullName");
+                                    fullNameField?.SetValue(data, msg.FullName);
                                 }
-                                else
+
+                                var regMethod = ParalivesGameApiResolver.RegisterCharacterMethod;
+                                if (regMethod != null)
                                 {
-                                    visualTransform.position = spawnPos;
-                                    visualTransform.rotation = msg.LastKnownRotation.ToUnity();
+                                    regMethod.Invoke(charMgr, new object[] { clonedChar });
+
+                                    var visual = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(
+                                        charMgr, new object[] { msg.CharacterGuid });
+                                    var visualTransform = ExtractTransform(visual);
+                                    if (visualTransform != null && entry.ControlledTransform != null)
+                                    {
+                                        visualTransform.SetParent(entry.ControlledTransform, false);
+                                        visualTransform.localPosition = Vector3.zero;
+                                        visualTransform.localRotation = Quaternion.identity;
+                                        entry.GameNativeCharacter = clonedChar;
+                                        entry.IsGameNative = true;
+                                        DisablePathfinding(clonedChar);
+                                        Plugin.Log.LogInfo($"[Paramulti] Game-native visual attached to proxy for player {msg.PlayerId}");
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                catch
+                catch (Exception gnex)
                 {
-                    // Silently continue with fallback cube
+                    var inner = gnex.InnerException != null ? gnex.InnerException.Message : gnex.Message;
+                    Plugin.Log.LogWarning($"[Paramulti] Game-native character spawn failed (will use fallback): {inner}");
                 }
             }
 
-            // Optionally try to enhance with prefab clone (as additional backup)
+            // Step 3: Optionally enhance with prefab clone (cloned local CharacterVisual)
             var prefabEntry = TryCreatePrefabClone(msg.PlayerId, msg.FullName, spawnPos);
-            if (prefabEntry != null && prefabEntry.ControlledTransform != null)
+            if (prefabEntry != null && prefabEntry.ControlledTransform != null && entry.ControlledTransform != null)
             {
-                // Parent the character model to our visible cube so they move together
-                if (entry != null && entry.ControlledTransform != null)
-                {
-                    prefabEntry.ControlledTransform.SetParent(entry.ControlledTransform, false);
-                    prefabEntry.ControlledTransform.localPosition = Vector3.zero;
-                    prefabEntry.ControlledTransform.localRotation = Quaternion.identity;
-                    Plugin.Log.LogInfo($"[Paramulti] Parented prefab clone to fallback cube for player {msg.PlayerId}");
-                }
-                else
-                {
-                    // No fallback cube exists, use the prefab clone directly
-                    entry = prefabEntry;
-                    entry.CharacterGuid = msg.CharacterGuid;
-                    entry.ControlledTransform.position = spawnPos;
-                    entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
-                }
-            }
-
-            if (entry == null)
-            {
-                Plugin.Log.LogError($"[Paramulti] CRITICAL: Could not create remote character for player {msg.PlayerId}");
-                return;
+                prefabEntry.ControlledTransform.SetParent(entry.ControlledTransform, false);
+                prefabEntry.ControlledTransform.localPosition = Vector3.zero;
+                prefabEntry.ControlledTransform.localRotation = Quaternion.identity;
+                Plugin.Log.LogInfo($"[Paramulti] Parented prefab clone to fallback cube for player {msg.PlayerId}");
             }
 
             lock (_lock)
@@ -1689,87 +1600,6 @@ namespace ParalivesMultiplayer.Session
 
             OnRemoteCharacterCreated?.Invoke(msg.PlayerId, entry);
             Plugin.Log.LogInfo($"[Paramulti][ProxyManager] Remote character ready for player {msg.PlayerId} (gameNative={entry.IsGameNative})");
-        }
-
-        static RemoteCharacterEntry TryCreateRemoteGameNativeCharacter(int playerId, ulong characterGuid, ulong modelGuid, string name, Vector3 spawnPos)
-        {
-            try
-            {
-                if (ParalivesGameApiResolver.CharacterManagerInstance == null) return null;
-                var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-
-                var createMethod = ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod;
-                if (createMethod == null) return null;
-
-                ulong effectiveModel = modelGuid != 0 ? modelGuid : GetLocalCharacterModelGuid();
-                if (effectiveModel == 0)
-                {
-                    Plugin.Log.LogWarning("[Paramulti] No model GUID available for remote character creation");
-                    return null;
-                }
-
-                Plugin.Log.LogInfo("[Paramulti] Creating remote game-native character for player " + playerId + " with model GUID=" + effectiveModel.ToString("X"));
-
-                var newAssetChar = createMethod.Invoke(charMgr, new object[] { effectiveModel });
-                if (newAssetChar == null) return null;
-
-                // Override the generated GUID with the remote player's known GUID if possible
-                var guidField = newAssetChar.GetType().GetField("GUID");
-                if (guidField != null)
-                    guidField.SetValue(newAssetChar, characterGuid);
-
-                // Set name
-                var dataProp = newAssetChar.GetType().GetProperty("Data");
-                var data = dataProp?.GetValue(newAssetChar);
-                if (data != null)
-                {
-                    var firstNameField = data.GetType().GetField("FirstName");
-                    firstNameField?.SetValue(data, name);
-                    var fullNameField = data.GetType().GetField("FullName");
-                    fullNameField?.SetValue(data, name);
-                }
-
-                // Register
-                var regMethod = ParalivesGameApiResolver.RegisterCharacterMethod;
-                if (regMethod != null)
-                {
-                    try { regMethod.Invoke(charMgr, new object[] { newAssetChar }); } catch { }
-                }
-
-                // Load visual
-                var loadVisualMethod = ParalivesGameApiResolver.LoadCharacterVisualMethod;
-                if (loadVisualMethod == null) return null;
-
-                var visual = loadVisualMethod.Invoke(charMgr, new object[] { characterGuid });
-                if (visual == null) return null;
-
-                var transform = ExtractTransform(visual);
-                if (transform == null) return null;
-
-                transform.position = spawnPos;
-                transform.rotation = Quaternion.identity;
-
-                StripInputComponents(transform);
-                DisablePathfinding(newAssetChar);
-
-                Plugin.Log.LogInfo($"[Paramulti] Remote game-native character created for player {playerId} (GUID={characterGuid:X})");
-
-                return new RemoteCharacterEntry
-                {
-                    PlayerId = playerId,
-                    CharacterGuid = characterGuid,
-                    GameNativeCharacter = newAssetChar,
-                    ControlledTransform = transform,
-                    IsGameNative = true,
-                    LastKnownPosition = spawnPos,
-                    LastKnownRotation = Quaternion.identity
-                };
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"[Paramulti] Remote game-native spawn exception for player {playerId}: {ex.Message}");
-                return null;
-            }
         }
 
         static void DisablePathfinding(object assetCharacter)
