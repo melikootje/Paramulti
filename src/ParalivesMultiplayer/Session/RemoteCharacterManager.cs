@@ -417,6 +417,45 @@ namespace ParalivesMultiplayer.Session
                 Plugin.Log.LogWarning($"[Paramulti] GetLocalCharacterModelGuid error: {ex.Message}");
             }
 
+            // Diagnostic: list all components on the local transform
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.Append($"[Paramulti] Model GUID lookup failed. Components on '{_localCharacterTransform.gameObject.name}':");
+                foreach (var comp in _localCharacterTransform.GetComponents<Component>())
+                {
+                    if (comp == null) continue;
+                    var t = comp.GetType();
+                    sb.Append($" [{t.Name}");
+                    // List all field names of this component
+                    foreach (var f in t.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
+                    {
+                        if (f.FieldType == typeof(ulong) || f.FieldType == typeof(long) ||
+                            f.Name.IndexOf("GUID", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            f.Name.IndexOf("Model", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            f.Name.IndexOf("Data", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            try { sb.Append($" {f.Name}={f.GetValue(comp)}"); } catch { sb.Append($" {f.Name}=?"); }
+                        }
+                    }
+                    foreach (var p in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                    {
+                        if (p.Name.IndexOf("GUID", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            p.Name.IndexOf("Model", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            p.Name.IndexOf("Data", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            try { sb.Append($" prop:{p.Name}={p.GetValue(comp)}"); } catch { }
+                        }
+                    }
+                    sb.Append("]");
+                }
+                Plugin.Log.LogInfo(sb.ToString());
+            }
+            catch (Exception dex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] Diagnostic error: {dex.Message}");
+            }
+
             Plugin.Log.LogWarning("[Paramulti] Could not determine local character model GUID (will use 0)");
             return 0;
         }
