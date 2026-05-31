@@ -1698,9 +1698,16 @@ namespace ParalivesMultiplayer.Session
                                     regMethod.Invoke(charMgr, new object[] { clonedChar });
                                     Plugin.Log.LogInfo($"[Paramulti] Step2: RegisterCharacter called for player {msg.PlayerId}");
 
-                                    var visual = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(
-                                        charMgr, new object[] { msg.CharacterGuid });
-                                    Plugin.Log.LogInfo($"[Paramulti] Step2: LoadCharacterVisual({msg.CharacterGuid:X})={(visual != null ? visual.ToString() : "null")}");
+                                    object visual = null;
+                                    var visualProp = clonedChar.GetType().GetProperty("Visual");
+                                    if (visualProp != null) visual = visualProp.GetValue(clonedChar);
+                                    Plugin.Log.LogInfo($"[Paramulti] Step2: clonedChar.Visual={(visual != null ? visual.ToString() : "null")}");
+                                    if (visual == null)
+                                    {
+                                        visual = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(
+                                            charMgr, new object[] { msg.CharacterGuid });
+                                        Plugin.Log.LogInfo($"[Paramulti] Step2: LoadCharacterVisual fallback={(visual != null ? visual.ToString() : "null")}");
+                                    }
                                     var visualTransform = ExtractTransform(visual);
                                     if (visualTransform != null && entry.ControlledTransform != null)
                                     {
