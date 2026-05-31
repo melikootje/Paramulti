@@ -308,7 +308,7 @@ namespace ParalivesMultiplayer.Session
 
             try
             {
-                // Step 1: Get the CharacterGUID from the CharacterVisual component
+                // Get CharacterGUID from CharacterVisual component
                 ulong characterGuid = 0;
                 foreach (var comp in _localCharacterTransform.GetComponents<Component>())
                 {
@@ -317,64 +317,40 @@ namespace ParalivesMultiplayer.Session
                     if (guidProp != null)
                     {
                         characterGuid = (ulong)guidProp.GetValue(comp);
-                        Plugin.Log.LogInfo($"[Paramulti] Got CharacterGUID from CharacterVisual: {characterGuid:X}");
                         break;
                     }
                 }
 
-                // Step 2: Use the character GUID to find the matching AssetCharacter in CharacterManager
-                if (characterGuid != 0 && ParalivesGameApiResolver.CharacterManagerInstance != null)
-                {
-                    var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-                    var cmType = ParalivesGameApiResolver.CharacterManagerType;
-                    var charsProp = cmType.GetProperty("Characters");
-                    if (charsProp != null)
-                    {
-                        var chars = charsProp.GetValue(charMgr) as System.Collections.IList;
-                        if (chars != null)
-                        {
-                            foreach (var c in chars)
-                            {
-                                var cmGuidProp = c.GetType().GetProperty("GUID");
-                                if (cmGuidProp == null) continue;
-                                var cmGuid = (ulong)cmGuidProp.GetValue(c);
-                                if (cmGuid == characterGuid)
-                                {
-                                    // Found the matching character! Get its Data.CurrentCharacterModelGUID
-                                    var dataProp = c.GetType().GetProperty("Data");
-                                    var data = dataProp?.GetValue(c);
-                                    if (data != null)
-                                    {
-                                        var modelField = data.GetType().GetField("CurrentCharacterModelGUID");
-                                        if (modelField != null)
-                                        {
-                                            var modelGuid = (ulong)modelField.GetValue(data);
-                                            Plugin.Log.LogInfo($"[Paramulti] Got model GUID={modelGuid:X} from CharacterManager character GUID={characterGuid:X}");
-                                            return modelGuid;
-                                        }
-                                        // Fallback: try CharacterModelGUID on Data
-                                        var cmField = data.GetType().GetField("CharacterModelGUID");
-                                        if (cmField != null)
-                                        {
-                                            var modelGuid = (ulong)cmField.GetValue(data);
-                                            Plugin.Log.LogInfo($"[Paramulti] Got model GUID={modelGuid:X} via CharacterModelGUID field");
-                                            return modelGuid;
-                                        }
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogWarning($"[Paramulti] GetLocalCharacterModelGuid error: {ex.Message}");
-            }
+                if (characterGuid == 0) return 0;
 
-            Plugin.Log.LogWarning("[Paramulti] Could not determine local character model GUID (will use 0)");
-            return 0;
+                // Use GetCharacterByGUID to find the AssetCharacter
+                var getCharMethod = ParalivesGameApiResolver.GetCharacterByGUIDMethod;
+                if (getCharMethod == null || ParalivesGameApiResolver.CharacterManagerInstance == null)
+                    return 0;
+
+                var assetChar = getCharMethod.Invoke(ParalivesGameApiResolver.CharacterManagerInstance, new object[] { characterGuid });
+                if (assetChar == null) return 0;
+
+                // Get Data.CurrentCharacterModelGUID
+                var dataProp = assetChar.GetType().GetProperty("Data");
+                var data = dataProp?.GetValue(assetChar);
+                if (data == null) return 0;
+
+                var modelField = data.GetType().GetField("CurrentCharacterModelGUID");
+                if (modelField == null)
+                {
+                    // Try alternative field names
+                    modelField = data.GetType().GetField("CharacterModelGUID");
+                    if (modelField == null) return 0;
+                }
+
+                var modelGuid = (ulong)modelField.GetValue(data);
+                return modelGuid;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         static RemoteCharacterEntry TryCreateGameNativeCharacter(int playerId, string playerName, Vector3 spawnPos)
