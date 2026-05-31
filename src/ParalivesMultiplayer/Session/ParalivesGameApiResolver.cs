@@ -94,6 +94,30 @@ namespace ParalivesMultiplayer.Session
             }
         }
 
+        public static void LogHybridPlayerFields(object hybridPlayer)
+        {
+            if (hybridPlayer == null) return;
+            var type = hybridPlayer.GetType();
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"[GameApi] HybridPlayer fields ({type.FullName}):");
+            foreach (var f in type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic))
+            {
+                var val = f.GetValue(hybridPlayer);
+                sb.AppendLine($"  {f.FieldType.Name} {f.Name} = {val}");
+            }
+            sb.AppendLine($"[GameApi] HybridPlayer properties:");
+            foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic))
+            {
+                try
+                {
+                    var val = p.GetValue(hybridPlayer);
+                    sb.AppendLine($"  {p.PropertyType.Name} {p.Name} = {val}");
+                }
+                catch { sb.AppendLine($"  {p.PropertyType.Name} {p.Name} = <error>"); }
+            }
+            Log(sb.ToString());
+        }
+
         static void ResolveInstances()
         {
             if (CharacterManagerType != null && CharacterManagerInstance == null)

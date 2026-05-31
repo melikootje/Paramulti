@@ -112,6 +112,7 @@ namespace ParalivesMultiplayer.Session
                         else
                         {
                             Plugin.Log.LogWarning($"[Paramulti] FindLocalCharacter Path1: CameraCurrentCharacterFollowTarget field not found on HybridPlayer");
+                            ParalivesGameApiResolver.LogHybridPlayerFields(player0);
                         }
                     }
                 }
@@ -139,12 +140,17 @@ namespace ParalivesMultiplayer.Session
                             if (runtimeVisual != null)
                             {
                                 var t = ExtractTransform(runtimeVisual);
+                                Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path2: ExtractTransform result={t?.name ?? "null"}, pos={t?.position}");
                                 if (t != null && IsValidLocalTransform(t))
                                 {
                                     _localCharacterTransform = t;
                                     _localCharacterFound = true;
                                     Plugin.Log.LogInfo($"[Paramulti] Found local character via HouseholdManager GUID={guid:X}: {t.gameObject.name}");
                                     return;
+                                }
+                                else
+                                {
+                                    Plugin.Log.LogWarning($"[Paramulti] FindLocalCharacter Path2: ExtractTransform null or IsValidLocalTransform failed for GUID={guid:X}");
                                 }
                             }
                         }
