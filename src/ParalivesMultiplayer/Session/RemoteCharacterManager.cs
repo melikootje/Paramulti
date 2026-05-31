@@ -1476,6 +1476,76 @@ namespace ParalivesMultiplayer.Session
 
             CharacterOwnershipManager.RegisterOwnership(msg.PlayerId, msg.CharacterGuid);
 
+            // Try to create a game-native character using the remote player's model GUID
+            // This must run BEFORE the "exists" check so newly deployed code can enhance existing proxies
+            if (msg.CharacterModelGuid != 0 && ParalivesGameApiResolver.CharacterManagerInstance != null &&
+                ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod != null)
+            {
+                try
+                {
+                    var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+                    var newAssetChar = ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod.Invoke(charMgr,
+                        new object[] { msg.CharacterModelGuid });
+                    if (newAssetChar != null)
+                    {
+                        var guidProp = newAssetChar.GetType().GetProperty("GUID");
+                        if (guidProp != null)
+                            guidProp.SetValue(newAssetChar, msg.CharacterGuid);
+
+                        var dataProp = newAssetChar.GetType().GetProperty("Data");
+                        var data = dataProp?.GetValue(newAssetChar);
+                        if (data != null)
+                        {
+                            var firstNameField = data.GetType().GetField("FirstName");
+                            firstNameField?.SetValue(data, msg.FullName);
+                            var fullNameField = data.GetType().GetField("FullName");
+                            fullNameField?.SetValue(data, msg.FullName);
+                        }
+
+                        var regMethod = ParalivesGameApiResolver.RegisterCharacterMethod;
+                        if (regMethod != null)
+                            regMethod.Invoke(charMgr, new object[] { newAssetChar });
+
+                        var loadVisualMethod = ParalivesGameApiResolver.LoadCharacterVisualMethod;
+                        if (loadVisualMethod != null)
+                        {
+                            var visual = loadVisualMethod.Invoke(charMgr, new object[] { msg.CharacterGuid });
+                            var visualTransform = ExtractTransform(visual);
+                            if (visualTransform != null)
+                            {
+                                // Existing proxy check: parent to existing controlled transform
+                                lock (_lock)
+                                {
+                                    if (_remoteCharacters.TryGetValue(msg.PlayerId, out var existing))
+                                    {
+                                        if (existing.ControlledTransform != null)
+                                        {
+                                            visualTransform.SetParent(existing.ControlledTransform, false);
+                                            visualTransform.localPosition = Vector3.zero;
+                                            visualTransform.localRotation = Quaternion.identity;
+                                        }
+                                        else
+                                        {
+                                            visualTransform.position = msg.LastKnownPosition.ToUnity();
+                                            visualTransform.rotation = msg.LastKnownRotation.ToUnity();
+                                        }
+                                    }
+                                    else
+                                    {
+                                        visualTransform.position = msg.LastKnownPosition.ToUnity();
+                                        visualTransform.rotation = msg.LastKnownRotation.ToUnity();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception gnex)
+                {
+                    Plugin.Log.LogWarning($"[Paramulti] Game-native char creation error: {gnex.Message}");
+                }
+            }
+
             // Check if we already have this character — update position instead of recreating
             lock (_lock)
             {
