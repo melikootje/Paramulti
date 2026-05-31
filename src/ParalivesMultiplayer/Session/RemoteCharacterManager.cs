@@ -1698,35 +1698,47 @@ namespace ParalivesMultiplayer.Session
                                     regMethod.Invoke(charMgr, new object[] { clonedChar });
                                     Plugin.Log.LogInfo($"[Paramulti] Step2: RegisterCharacter called for player {msg.PlayerId}");
 
-                                    object visual = null;
-                                    var visualProp = clonedChar.GetType().GetProperty("Visual");
-                                    if (visualProp != null) visual = visualProp.GetValue(clonedChar);
-                                    Plugin.Log.LogInfo($"[Paramulti] Step2: clonedChar.Visual={(visual != null ? visual.ToString() : "null")}");
+                                    // Try LoadCharacterVisual with multiple GUIDs:
+                                    // 1. Original AssetCharacter GUID (the one already registered with the game)
+                                    // 2. Cloned character GUID (the one we just assigned)
+                                    // 3. Model GUID (template GUID)
+                                    var origGuidProp = assetChar.GetType().GetProperty("GUID");
+                                    var origGuid = origGuidProp != null ? (ulong)origGuidProp.GetValue(assetChar) : 0UL;
+                                    Plugin.Log.LogInfo($"[Paramulti] Step2: original AssetCharacter GUID={origGuid:X}, cloned GUID={msg.CharacterGuid:X}, model GUID={msg.CharacterModelGuid:X}");
 
-                                    // Get the runtime CharacterVisual from the CharacterManager
-                                    var runtimeVisual = ParalivesGameApiResolver.GetLoadedCharacterVisualMethod.Invoke(
-                                        charMgr, new object[] { msg.CharacterGuid });
-                                    Plugin.Log.LogInfo($"[Paramulti] Step2: GetLoadedCharacterVisual({msg.CharacterGuid:X})={(runtimeVisual != null ? runtimeVisual.ToString() : "null")}");
-                                    if (runtimeVisual != null)
+                                    object visual = null;
+                                    foreach (var guid in new[] { origGuid, msg.CharacterGuid, msg.CharacterModelGuid })
                                     {
-                                        visual = runtimeVisual;
-                                    }
-                                    else if (visual == null)
-                                    {
+                                        if (guid == 0) continue;
                                         visual = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(
-                                            charMgr, new object[] { msg.CharacterGuid });
-                                        Plugin.Log.LogInfo($"[Paramulti] Step2: LoadCharacterVisual fallback={(visual != null ? visual.ToString() : "null")}");
+                                            charMgr, new object[] { guid });
+                                        Plugin.Log.LogInfo($"[Paramulti] Step2: LoadCharacterVisual({guid:X})={(visual != null ? visual.ToString() : "null")}");
+                                        if (visual != null) break;
+
+                                        visual = ParalivesGameApiResolver.GetLoadedCharacterVisualMethod.Invoke(
+                                            charMgr, new object[] { guid });
+                                        Plugin.Log.LogInfo($"[Paramulti] Step2: GetLoadedCharacterVisual({guid:X})={(visual != null ? visual.ToString() : "null")}");
+                                        if (visual != null) break;
                                     }
-                                    var visualTransform = ExtractTransform(visual);
-                                    if (visualTransform != null && entry.ControlledTransform != null)
+
+                                    if (visual != null)
                                     {
-                                        visualTransform.SetParent(entry.ControlledTransform, false);
-                                        visualTransform.localPosition = Vector3.zero;
-                                        visualTransform.localRotation = Quaternion.identity;
-                                        entry.GameNativeCharacter = clonedChar;
-                                        entry.IsGameNative = true;
-                                        DisablePathfinding(clonedChar);
-                                        Plugin.Log.LogInfo($"[Paramulti] Game-native visual attached to proxy for player {msg.PlayerId}");
+                                        var visualTransform = ExtractTransform(visual);
+                                        Plugin.Log.LogInfo($"[Paramulti] Step2: ExtractTransform result={(visualTransform != null ? visualTransform.gameObject.name : "null")}");
+                                        if (visualTransform != null && entry.ControlledTransform != null)
+                                        {
+                                            visualTransform.SetParent(entry.ControlledTransform, false);
+                                            visualTransform.localPosition = Vector3.zero;
+                                            visualTransform.localRotation = Quaternion.identity;
+                                            entry.GameNativeCharacter = clonedChar;
+                                            entry.IsGameNative = true;
+                                            DisablePathfinding(clonedChar);
+                                            Plugin.Log.LogInfo($"[Paramulti] Game-native visual attached for player {msg.PlayerId}");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Plugin.Log.LogInfo("[Paramulti] Step2: Could not load visual via any GUID");
                                     }
                                 }
                             }
