@@ -41,6 +41,24 @@ namespace ParalivesMultiplayer.Session
             FindLocalCharacter();
         }
 
+        static ulong GetCharacterGuid(object c)
+        {
+            var t = c.GetType();
+            var guidProp = t.GetProperty("GUID", BindingFlags.Public | BindingFlags.Instance);
+            ulong guid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
+            if (guid == 0)
+            {
+                var f = t.GetField("m_CharacterGUID", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (f != null) guid = (ulong)f.GetValue(c);
+            }
+            if (guid == 0)
+            {
+                var f2 = t.BaseType?.GetField("m_GUID", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (f2 != null) guid = (ulong)f2.GetValue(c);
+            }
+            return guid;
+        }
+
         public static void FindLocalCharacter()
         {
             ParalivesGameApiResolver.Resolve();
@@ -78,35 +96,24 @@ namespace ParalivesMultiplayer.Session
                                     if (selectedList != null && selectedList.Count > 0)
                                     {
                                         var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-                                        var cmType = ParalivesGameApiResolver.CharacterManagerType;
-                                        var charsProp = cmType.GetProperty("Characters");
-                                        if (charsProp != null)
+                                        var loadedVisMethod = ParalivesGameApiResolver.GetLoadedCharacterVisualMethod;
+                                        foreach (var selectedGuid in selectedList)
                                         {
-                                            var chars = charsProp.GetValue(charMgr) as System.Collections.IList;
-                                            if (chars != null)
+                                            var guid = Convert.ToUInt64(selectedGuid);
+                                            Plugin.Log.LogInfo($"[Paramulti] Path1: trying selected guid={guid:X}");
+                                            if (guid == 0) continue;
+                                            var runtimeVisual = loadedVisMethod.Invoke(charMgr, new object[] { guid });
+                                            Plugin.Log.LogInfo($"[Paramulti] Path1: GetLoadedCharacterVisual({guid:X})={(runtimeVisual != null ? runtimeVisual.ToString() : "null")}");
+                                            if (runtimeVisual != null)
                                             {
-                                                foreach (var selectedGuid in selectedList)
+                                                var t = ExtractTransform(runtimeVisual);
+                                                Plugin.Log.LogInfo($"[Paramulti] Path1: transform t={t?.gameObject?.name ?? "null"}, valid={t != null && IsValidLocalTransform(t)}");
+                                                if (t != null && IsValidLocalTransform(t))
                                                 {
-                                                    var guid = Convert.ToUInt64(selectedGuid);
-                                                    if (guid == 0) continue;
-                                                    foreach (var c in chars)
-                                                    {
-                                                        var guidProp = c.GetType().GetProperty("GUID");
-                                                        var charGuid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
-                                                        if (charGuid == guid)
-                                                        {
-                                                            var visualProp = c.GetType().GetProperty("Visual");
-                                                            var visual = visualProp?.GetValue(c);
-                                                            var t = ExtractTransform(visual);
-                                                            if (t != null && IsValidLocalTransform(t))
-                                                            {
-                                                                _localCharacterTransform = t;
-                                                                _localCharacterFound = true;
-                                                                Plugin.Log.LogInfo($"[Paramulti] Found local character via SelectedCharactersGUID={guid:X}: {t.gameObject.name}");
-                                                                return;
-                                                            }
-                                                        }
-                                                    }
+                                                    _localCharacterTransform = t;
+                                                    _localCharacterFound = true;
+                                                    Plugin.Log.LogInfo($"[Paramulti] Found local character via SelectedCharactersGUID + GetLoadedCharacterVisual={guid:X}: {t.gameObject.name}");
+                                                    return;
                                                 }
                                             }
                                         }
@@ -131,8 +138,7 @@ namespace ParalivesMultiplayer.Session
                         var loadedVisMethod = ParalivesGameApiResolver.GetLoadedCharacterVisualMethod;
                         foreach (var c in chars)
                         {
-                            var guidProp = c.GetType().GetProperty("GUID");
-                            var guid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
+                            var guid = GetCharacterGuid(c);
                             if (guid == 0) continue;
 
                             var runtimeVisual = loadedVisMethod.Invoke(charMgr, new object[] { guid });
