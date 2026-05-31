@@ -1476,64 +1476,83 @@ namespace ParalivesMultiplayer.Session
 
             CharacterOwnershipManager.RegisterOwnership(msg.PlayerId, msg.CharacterGuid);
 
-            // Try to create a game-native character using the remote player's model GUID
-            // This must run BEFORE the "exists" check so newly deployed code can enhance existing proxies
-            if (msg.CharacterModelGuid != 0 && ParalivesGameApiResolver.CharacterManagerInstance != null &&
-                ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod != null)
+            Vector3 spawnPos = msg.LastKnownPosition.ToUnity();
+
+            // Try to get a game-native character using the remote player's model GUID via AssetManager
+            // (NOT CreateCharacterByModelGUID which crashes because it tries to create asset packages)
+            if (msg.CharacterModelGuid != 0 && ParalivesGameApiResolver.AssetManagerInstance != null &&
+                ParalivesGameApiResolver.GetCharacterMethod != null &&
+                ParalivesGameApiResolver.CharacterManagerInstance != null)
             {
                 try
                 {
-                    var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-                    var newAssetChar = ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod.Invoke(charMgr,
+                    var am = ParalivesGameApiResolver.AssetManagerInstance;
+                    var assetChar = ParalivesGameApiResolver.GetCharacterMethod.Invoke(am,
                         new object[] { msg.CharacterModelGuid });
-                    if (newAssetChar != null)
+                    if (assetChar != null)
                     {
-                        var guidProp = newAssetChar.GetType().GetProperty("GUID");
+                        // Override GUID with the remote player's known GUID
+                        var guidProp = assetChar.GetType().GetProperty("GUID");
                         if (guidProp != null)
-                            guidProp.SetValue(newAssetChar, msg.CharacterGuid);
-
-                        var dataProp = newAssetChar.GetType().GetProperty("Data");
-                        var data = dataProp?.GetValue(newAssetChar);
-                        if (data != null)
                         {
-                            var firstNameField = data.GetType().GetField("FirstName");
-                            firstNameField?.SetValue(data, msg.FullName);
-                            var fullNameField = data.GetType().GetField("FullName");
-                            fullNameField?.SetValue(data, msg.FullName);
-                        }
-
-                        var regMethod = ParalivesGameApiResolver.RegisterCharacterMethod;
-                        if (regMethod != null)
-                            regMethod.Invoke(charMgr, new object[] { newAssetChar });
-
-                        var loadVisualMethod = ParalivesGameApiResolver.LoadCharacterVisualMethod;
-                        if (loadVisualMethod != null)
-                        {
-                            var visual = loadVisualMethod.Invoke(charMgr, new object[] { msg.CharacterGuid });
-                            var visualTransform = ExtractTransform(visual);
-                            if (visualTransform != null)
+                            // Need to clone the asset char to avoid modifying the original
+                            var cloneMethod = assetChar.GetType().GetMethod("MemberwiseClone",
+                                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            if (cloneMethod != null)
                             {
-                                // Existing proxy check: parent to existing controlled transform
-                                lock (_lock)
+                                var clonedChar = cloneMethod.Invoke(assetChar, null);
+                                if (clonedChar != null)
                                 {
-                                    if (_remoteCharacters.TryGetValue(msg.PlayerId, out var existing))
+                                    // Set the GUID on the clone
+                                    var clonedGuidProp = clonedChar.GetType().GetProperty("GUID");
+                                    clonedGuidProp?.SetValue(clonedChar, msg.CharacterGuid);
+
+                                    // Set name on the clone's Data
+                                    var dataProp = clonedChar.GetType().GetProperty("Data");
+                                    var data = dataProp?.GetValue(clonedChar);
+                                    if (data != null)
                                     {
-                                        if (existing.ControlledTransform != null)
-                                        {
-                                            visualTransform.SetParent(existing.ControlledTransform, false);
-                                            visualTransform.localPosition = Vector3.zero;
-                                            visualTransform.localRotation = Quaternion.identity;
-                                        }
-                                        else
-                                        {
-                                            visualTransform.position = msg.LastKnownPosition.ToUnity();
-                                            visualTransform.rotation = msg.LastKnownRotation.ToUnity();
-                                        }
+                                        var firstNameField = data.GetType().GetField("FirstName");
+                                        firstNameField?.SetValue(data, msg.FullName);
+                                        var fullNameField = data.GetType().GetField("FullName");
+                                        fullNameField?.SetValue(data, msg.FullName);
                                     }
-                                    else
+
+                                    // Register the cloned character
+                                    var regMethod = ParalivesGameApiResolver.RegisterCharacterMethod;
+                                    if (regMethod != null)
                                     {
-                                        visualTransform.position = msg.LastKnownPosition.ToUnity();
-                                        visualTransform.rotation = msg.LastKnownRotation.ToUnity();
+                                        regMethod.Invoke(ParalivesGameApiResolver.CharacterManagerInstance,
+                                            new object[] { clonedChar });
+
+                                        // Load its visual
+                                        var loadVisualMethod = ParalivesGameApiResolver.LoadCharacterVisualMethod;
+                                        if (loadVisualMethod != null)
+                                        {
+                                            var visual = loadVisualMethod.Invoke(
+                                                ParalivesGameApiResolver.CharacterManagerInstance,
+                                                new object[] { msg.CharacterGuid });
+                                            var visualTransform = ExtractTransform(visual);
+                                            if (visualTransform != null)
+                                            {
+                                                // Parent to existing proxy
+                                                lock (_lock)
+                                                {
+                                                    if (_remoteCharacters.TryGetValue(msg.PlayerId, out var existing) &&
+                                                        existing.ControlledTransform != null)
+                                                    {
+                                                        visualTransform.SetParent(existing.ControlledTransform, false);
+                                                        visualTransform.localPosition = Vector3.zero;
+                                                        visualTransform.localRotation = Quaternion.identity;
+                                                    }
+                                                    else
+                                                    {
+                                                        visualTransform.position = spawnPos;
+                                                        visualTransform.rotation = msg.LastKnownRotation.ToUnity();
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1543,18 +1562,7 @@ namespace ParalivesMultiplayer.Session
                 catch (Exception gnex)
                 {
                     var inner = gnex.InnerException != null ? gnex.InnerException.Message : gnex.Message;
-                    var stack = gnex.InnerException != null ? gnex.InnerException.StackTrace : gnex.StackTrace;
-                    Plugin.Log.LogWarning($"[Paramulti] Game-native char creation error: {inner}");
-                    Plugin.Log.LogWarning($"[Paramulti] Stack: {stack}");
-                    // Try to get more specific info
-                    try
-                    {
-                        // Check what methods are available
-                        Plugin.Log.LogWarning($"[Paramulti]  CharMgr={ParalivesGameApiResolver.CharacterManagerInstance != null}");
-                        Plugin.Log.LogWarning($"[Paramulti]  CreateMethod={ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod != null}");
-                        Plugin.Log.LogWarning($"[Paramulti]  ModelGUID={msg.CharacterModelGuid:X}");
-                    }
-                    catch { }
+                    Plugin.Log.LogWarning($"[Paramulti] Asset char clone error: {inner}");
                 }
             }
 
@@ -1581,7 +1589,6 @@ namespace ParalivesMultiplayer.Session
             }
 
             // Always create the visible fallback cube FIRST — guaranteed to render
-            Vector3 spawnPos = msg.LastKnownPosition.ToUnity();
             var entry = CreateFallbackProxy(msg.PlayerId, msg.FullName, spawnPos);
             if (entry != null)
             {
