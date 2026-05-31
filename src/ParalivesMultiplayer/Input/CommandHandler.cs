@@ -242,14 +242,8 @@ namespace ParalivesMultiplayer.Input
 
                 if (MultiplayerSession.IsHost)
                 {
-                    foreach (var id in MultiplayerSession.GetPlayerIds())
-                    {
-                        if (id != MultiplayerSession.LocalPlayerId)
-                        {
-                            net.SendToClient(id, charData);
-                            Plugin.Log?.LogInfo($"[Cmd] Force-sent character data to client {id}");
-                        }
-                    }
+                    net.SendToAllClients(charData);
+                    Plugin.Log?.LogInfo($"[Cmd] Force-sent character data to all clients");
                 }
                 else
                 {

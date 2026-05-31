@@ -390,15 +390,9 @@ namespace ParalivesMultiplayer
 
                 if (MultiplayerSession.IsHost)
                 {
-                    // Send to all connected clients
-                    foreach (var id in MultiplayerSession.GetPlayerIds())
-                    {
-                        if (id != MultiplayerSession.LocalPlayerId)
-                        {
-                            net.SendToClient(id, charData);
-                            Log.LogDebug($"[Paramulti] Re-sent host character data to client {id}");
-                        }
-                    }
+                    // Send to all connected clients (host is not in _sessions, so SendToAllClients is safe)
+                    net.SendToAllClients(charData);
+                    Log.LogDebug($"[Paramulti] Re-sent host character data to all clients");
                 }
                 else
                 {

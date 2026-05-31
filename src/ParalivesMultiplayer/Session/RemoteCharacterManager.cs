@@ -532,11 +532,11 @@ namespace ParalivesMultiplayer.Session
                 go.tag = "Untagged";
 
                 var transform = go.transform;
-                // Lift well above ground so it's always visible from top-down camera
-                transform.position = new Vector3(spawnPos.x, spawnPos.y + 1.5f, spawnPos.z);
+                // Use spawn position directly — game Y is already at character height
+                transform.position = new Vector3(spawnPos.x, spawnPos.y, spawnPos.z);
                 transform.rotation = Quaternion.identity;
-                // Make it large and very visible
-                transform.localScale = new Vector3(2.0f, 3.0f, 2.0f);
+                // Scale 1,1,1 so child visuals (game-native, prefab clone) render at natural size
+                transform.localScale = Vector3.one;
 
                 // Remove the default collider (we don't need physics on proxy)
                 var collider = go.GetComponent<Collider>();

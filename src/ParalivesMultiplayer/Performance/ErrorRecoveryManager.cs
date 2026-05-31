@@ -157,7 +157,7 @@ namespace ParalivesMultiplayer.Performance
 
             if (ParalivesMultiplayer.Session.MultiplayerSession.IsHost)
             {
-                net.SendToClient(playerId, ParalivesMultiplayer.Session.EntitySyncManager.BuildSnapshot());
+                net.SendToAllClients(ParalivesMultiplayer.Session.EntitySyncManager.BuildSnapshot());
             }
             else
             {
