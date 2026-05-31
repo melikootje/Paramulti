@@ -1543,7 +1543,18 @@ namespace ParalivesMultiplayer.Session
                 catch (Exception gnex)
                 {
                     var inner = gnex.InnerException != null ? gnex.InnerException.Message : gnex.Message;
+                    var stack = gnex.InnerException != null ? gnex.InnerException.StackTrace : gnex.StackTrace;
                     Plugin.Log.LogWarning($"[Paramulti] Game-native char creation error: {inner}");
+                    Plugin.Log.LogWarning($"[Paramulti] Stack: {stack}");
+                    // Try to get more specific info
+                    try
+                    {
+                        // Check what methods are available
+                        Plugin.Log.LogWarning($"[Paramulti]  CharMgr={ParalivesGameApiResolver.CharacterManagerInstance != null}");
+                        Plugin.Log.LogWarning($"[Paramulti]  CreateMethod={ParalivesGameApiResolver.CreateCharacterByModelGUIDMethod != null}");
+                        Plugin.Log.LogWarning($"[Paramulti]  ModelGUID={msg.CharacterModelGuid:X}");
+                    }
+                    catch { }
                 }
             }
 
