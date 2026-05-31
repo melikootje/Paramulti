@@ -65,6 +65,7 @@ namespace ParalivesMultiplayer.Session
                         if (followField != null)
                         {
                             var followGuid = (ulong)followField.GetValue(player0);
+                            Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: HybridPlayer.CameraCurrentCharacterFollowTarget = {followGuid:X}");
                             if (followGuid != 0)
                             {
                                 var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
@@ -75,6 +76,7 @@ namespace ParalivesMultiplayer.Session
                                     var chars = charsProp.GetValue(charMgr) as System.Collections.IList;
                                     if (chars != null)
                                     {
+                                        Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: scanning {chars.Count} characters for GUID match");
                                         foreach (var c in chars)
                                         {
                                             var guidProp = c.GetType().GetProperty("GUID");
@@ -83,6 +85,7 @@ namespace ParalivesMultiplayer.Session
                                             {
                                                 var visualProp = c.GetType().GetProperty("Visual");
                                                 var visual = visualProp?.GetValue(c);
+                                                Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: matched character GUID={guid:X}, visual type={visual?.GetType().Name ?? "null"}");
                                                 var t = ExtractTransform(visual);
                                                 if (t != null && IsValidLocalTransform(t))
                                                 {
@@ -91,11 +94,24 @@ namespace ParalivesMultiplayer.Session
                                                     Plugin.Log.LogInfo($"[Paramulti] Found local character via HybridPlayer CameraCurrentCharacterFollowTarget GUID={followGuid:X}: {t.gameObject.name}");
                                                     return;
                                                 }
+                                                else
+                                                {
+                                                    Plugin.Log.LogWarning($"[Paramulti] FindLocalCharacter Path1: ExtractTransform returned null or IsValidLocalTransform failed for matched character");
+                                                }
                                             }
                                         }
+                                        Plugin.Log.LogWarning($"[Paramulti] FindLocalCharacter Path1: no character in CharacterManager matched followGuid={followGuid:X}");
                                     }
                                 }
                             }
+                            else
+                            {
+                                Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path1: followGuid is 0 (no character selected)");
+                            }
+                        }
+                        else
+                        {
+                            Plugin.Log.LogWarning($"[Paramulti] FindLocalCharacter Path1: CameraCurrentCharacterFollowTarget field not found on HybridPlayer");
                         }
                     }
                 }
@@ -107,6 +123,7 @@ namespace ParalivesMultiplayer.Session
                 {
                     var hm = ParalivesGameApiResolver.HouseholdManagerInstance;
                     var chars = ParalivesGameApiResolver.GetCharactersInCurrentHouseholdMethod.Invoke(hm, null) as System.Collections.IList;
+                    Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path2: HouseholdManager chars count={chars?.Count ?? -1}");
                     if (chars != null && chars.Count > 0)
                     {
                         var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
@@ -118,6 +135,7 @@ namespace ParalivesMultiplayer.Session
                             if (guid == 0) continue;
 
                             var runtimeVisual = loadedVisMethod.Invoke(charMgr, new object[] { guid });
+                            Plugin.Log.LogInfo($"[Paramulti] FindLocalCharacter Path2: household member GUID={guid:X}, runtimeVisual={runtimeVisual?.GetType().Name ?? "null"}");
                             if (runtimeVisual != null)
                             {
                                 var t = ExtractTransform(runtimeVisual);
