@@ -720,7 +720,8 @@ namespace ParalivesMultiplayer.Session
         // After MemberwiseClone, clonedChar.Data is the *same reference* as donor.Data.
         // The game runs autonomy/needs on every Characters list entry; both donor and clone
         // would mutate the same AssetCharacterData, depleting the donor's stats 2x and killing
-        // the local sim. AssetCharacterData has a built-in Copy() — use it to fork the state.
+        // the local sim. AssetCharacterData has no Copy() method, so JSON-round-trip it for a
+        // fully independent instance.
         static bool TryIsolateClonedCharacterData(object clonedChar)
         {
             if (clonedChar == null) return false;
@@ -731,10 +732,9 @@ namespace ParalivesMultiplayer.Session
                 var data = dataProp.GetValue(clonedChar);
                 if (data == null) return false;
 
-                var copyMethod = data.GetType().GetMethod("Copy",
-                    BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
-                if (copyMethod == null) return false;
-                var copied = copyMethod.Invoke(data, null);
+                var json = JsonUtility.ToJson(data, false);
+                if (string.IsNullOrEmpty(json)) return false;
+                var copied = JsonUtility.FromJson(json, data.GetType());
                 if (copied == null) return false;
 
                 dataProp.SetValue(clonedChar, copied);
