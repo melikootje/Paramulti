@@ -1889,7 +1889,7 @@ namespace ParalivesMultiplayer.Session
                     var msg = BuildCharacterDataSyncFromAssetCharacter(selected);
                     if (msg != null)
                     {
-                        Plugin.Log.LogInfo($"[Paramulti] BuildLocalCharacterDataSync (selected): GUID={msg.CharacterGuid:X}, Name={msg.FullName}, Model={msg.CharacterModelGuid:X}, visualJsonBytes={msg.CharacterVisualJson?.Length ?? 0}");
+                        Plugin.Log.LogInfo($"[Paramulti] BuildLocalCharacterDataSync (selected): GUID={msg.CharacterGuid:X}, Name={msg.FullName}, Model={msg.CharacterModelGuid:X}, pos=({msg.LastKnownPosition.x:0.00}, {msg.LastKnownPosition.y:0.00}, {msg.LastKnownPosition.z:0.00}), visualJsonBytes={msg.CharacterVisualJson?.Length ?? 0}");
                         return msg;
                     }
                 }
