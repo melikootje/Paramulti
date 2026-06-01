@@ -70,8 +70,8 @@ namespace ParalivesMultiplayer.Session
                 bool alreadyPresent = false;
                 foreach (var c in chars)
                 {
-                    var guidProp = c.GetType().GetProperty("GUID");
-                    var guid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
+                    var guidField = c.GetType().GetField("GUID", BindingFlags.Public | BindingFlags.Instance);
+                    var guid = guidField != null ? (ulong)guidField.GetValue(c) : 0UL;
                     if (guid == characterGuid)
                     {
                         alreadyPresent = true;
@@ -144,8 +144,8 @@ namespace ParalivesMultiplayer.Session
                 object toRemove = null;
                 foreach (var c in chars)
                 {
-                    var guidProp = c.GetType().GetProperty("GUID");
-                    var guid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
+                    var guidField = c.GetType().GetField("GUID", BindingFlags.Public | BindingFlags.Instance);
+                    var guid = guidField != null ? (ulong)guidField.GetValue(c) : 0UL;
                     if (guid == characterGuid)
                     {
                         toRemove = c;

@@ -404,6 +404,94 @@ namespace ParalivesMultiplayer.Session
             }
         }
 
+        // GUID is a public *field* on AssetData (not a property), so reflection must use GetField.
+        static ulong GetAssetGuid(object asset)
+        {
+            if (asset == null) return 0UL;
+            var f = asset.GetType().GetField("GUID", BindingFlags.Public | BindingFlags.Instance);
+            if (f == null) return 0UL;
+            try { return (ulong)f.GetValue(asset); }
+            catch { return 0UL; }
+        }
+
+        static bool SetAssetGuid(object asset, ulong guid)
+        {
+            if (asset == null) return false;
+            var f = asset.GetType().GetField("GUID", BindingFlags.Public | BindingFlags.Instance);
+            if (f == null) return false;
+            try { f.SetValue(asset, guid); return true; }
+            catch { return false; }
+        }
+
+        // LoadCharacterVisual only works for GUIDs present in AssetManager._assets. Inject our clone.
+        static bool InjectIntoAssetManagerAssets(ulong guid, object asset)
+        {
+            var am = ParalivesGameApiResolver.AssetManagerInstance;
+            if (am == null || asset == null) return false;
+            var f = am.GetType().GetField("_assets", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (f == null) return false;
+            var assets = f.GetValue(am) as System.Collections.IDictionary;
+            if (assets == null) return false;
+            try { assets[guid] = asset; return true; }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] InjectIntoAssetManagerAssets({guid:X}) failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        static bool RemoveFromAssetManagerAssets(ulong guid)
+        {
+            var am = ParalivesGameApiResolver.AssetManagerInstance;
+            if (am == null) return false;
+            var f = am.GetType().GetField("_assets", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (f == null) return false;
+            var assets = f.GetValue(am) as System.Collections.IDictionary;
+            if (assets == null || !assets.Contains(guid)) return false;
+            try { assets.Remove(guid); return true; }
+            catch { return false; }
+        }
+
+        // PremadeType.No is enum value 0. RegisterCharacter is a no-op for non-No premade types.
+        static bool ForcePremadeTypeNo(object assetCharacter)
+        {
+            if (assetCharacter == null) return false;
+            var p = assetCharacter.GetType().GetProperty("PremadeType");
+            if (p == null) return false;
+            try { p.SetValue(assetCharacter, Enum.ToObject(p.PropertyType, 0)); return true; }
+            catch { return false; }
+        }
+
+        static bool RemoveFromLoadedCharacterVisuals(ulong guid)
+        {
+            var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+            if (charMgr == null) return false;
+            var f = charMgr.GetType().GetField("LoadedCharacterVisuals", BindingFlags.Public | BindingFlags.Instance);
+            if (f == null) return false;
+            var dict = f.GetValue(charMgr) as System.Collections.IDictionary;
+            if (dict == null || !dict.Contains(guid)) return false;
+            try { dict.Remove(guid); return true; }
+            catch { return false; }
+        }
+
+        static bool RemoveFromCharacterManagerList(object assetChar)
+        {
+            var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+            if (charMgr == null || assetChar == null) return false;
+            var list = charMgr.GetType().GetProperty("Characters")?.GetValue(charMgr) as System.Collections.IList;
+            if (list == null || !list.Contains(assetChar)) return false;
+            try { list.Remove(assetChar); return true; }
+            catch { return false; }
+        }
+
+        static object TryFindAnyLocalAssetCharacter()
+        {
+            var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+            var list = charMgr?.GetType().GetProperty("Characters")?.GetValue(charMgr) as System.Collections.IList;
+            if (list == null || list.Count == 0) return null;
+            return list[0];
+        }
+
         static RemoteCharacterEntry TryCreateGameNativeCharacter(int playerId, string playerName, Vector3 spawnPos)
         {
             try
@@ -459,8 +547,7 @@ namespace ParalivesMultiplayer.Session
 
                 // Generate a unique GUID for this remote character
                 var guid = GenerateGuidForPlayer(playerId);
-                var guidProp = clonedChar.GetType().GetProperty("GUID");
-                guidProp?.SetValue(clonedChar, guid);
+                SetAssetGuid(clonedChar, guid);
 
                 // Set name
                 var dataProp = clonedChar.GetType().GetProperty("Data");
@@ -584,7 +671,7 @@ namespace ParalivesMultiplayer.Session
                 var meshes = go.GetComponentsInChildren<MeshRenderer>(true).Length;
 
                 StripInputComponents(transform);
-                ForceStandardMaterials(go);
+                ApplyGhostMaterial(go, playerId);
                 AttachDebugMarker(go, playerId, playerName);
 
                 Plugin.Log.LogInfo($"[Paramulti] Cloned local character for player {playerId}: {go.name} at {spawnPos} (Animator={animators}, SkinnedMesh={skinned}, MeshRenderer={meshes})");
@@ -982,22 +1069,17 @@ namespace ParalivesMultiplayer.Session
             {
                 try
                 {
-                    var delMethod = ParalivesGameApiResolver.DeleteCharacterMethod;
-                    if (delMethod != null)
-                    {
-                        delMethod.Invoke(ParalivesGameApiResolver.CharacterManagerInstance,
-                            new object[] { 0, entry.CharacterGuid, false });
-                        Plugin.Log.LogInfo($"[Paramulti] Deleted game-native character for player {playerId}");
-                    }
-                    else
-                    {
-                        DestroyGameObject(entry.ControlledTransform?.gameObject);
-                    }
+                    // We synthesized this AssetCharacter via _assets injection — cleanup is manual.
+                    // DO NOT call DeleteCharacter: it walks the household, tries Unload() (filesystem),
+                    // and DeleteAsset() on a clone that has no on-disk file.
+                    RemoveFromLoadedCharacterVisuals(entry.CharacterGuid);
+                    RemoveFromCharacterManagerList(entry.GameNativeCharacter);
+                    RemoveFromAssetManagerAssets(entry.CharacterGuid);
+                    Plugin.Log.LogInfo($"[Paramulti] Cleaned up synthesized AssetCharacter for player {playerId} (GUID={entry.CharacterGuid:X})");
                 }
                 catch (Exception ex)
                 {
                     Plugin.Log.LogWarning($"[Paramulti] Failed to clean up game-native character for player {playerId}: {ex.Message}");
-                    DestroyGameObject(entry.ControlledTransform?.gameObject);
                 }
             }
 
@@ -1428,8 +1510,7 @@ namespace ParalivesMultiplayer.Session
                     var t = ExtractTransform(visual);
                     if (t == _localCharacterTransform)
                     {
-                        var guidProp = c.GetType().GetProperty("GUID");
-                        return guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
+                        return GetAssetGuid(c);
                     }
                 }
             }
@@ -1487,8 +1568,7 @@ namespace ParalivesMultiplayer.Session
                     Plugin.Log.LogDebug($"[Paramulti]   char visual transform: {t?.name ?? "null"}, match={match}");
                     if (!match) continue;
 
-                    var guidProp = c.GetType().GetProperty("GUID");
-                    var guid = guidProp != null ? (ulong)guidProp.GetValue(c) : 0UL;
+                    var guid = GetAssetGuid(c);
 
                     var dataProp = c.GetType().GetProperty("Data");
                     var data = dataProp?.GetValue(c);
@@ -1650,96 +1730,75 @@ namespace ParalivesMultiplayer.Session
             entry.ControlledTransform.position = spawnPos;
             entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
 
-            // Step 2: Try game-native character — get the AssetCharacter via CharacterManager.GetCharacterByGUID
-            // (this uses character instance GUID, not model GUID)
+            // Step 2: Spawn a game-native CharacterVisual for the remote player.
+            // Strategy: clone a local AssetCharacter (donor), reassign its GUID to msg.CharacterGuid,
+            // and INJECT it into AssetManager._assets so LoadCharacterVisual can find it.
+            // (LoadCharacterVisual is hard-coupled to AssetManager._assets[guid]; registering with
+            //  CharacterManager.RegisterCharacter alone is not enough.)
             Plugin.Log.LogInfo($"[Paramulti] Step2: charGuid={msg.CharacterGuid:X}, modelGuid={msg.CharacterModelGuid:X}");
-            if (msg.CharacterGuid != 0 && ParalivesGameApiResolver.GetCharacterByGUIDMethod != null &&
-                ParalivesGameApiResolver.CharacterManagerInstance != null &&
+            if (msg.CharacterGuid != 0 && ParalivesGameApiResolver.CharacterManagerInstance != null &&
+                ParalivesGameApiResolver.AssetManagerInstance != null &&
                 ParalivesGameApiResolver.LoadCharacterVisualMethod != null)
             {
+                bool injected = false;
+                object clonedChar = null;
                 try
                 {
                     var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
-                    object assetChar = ParalivesGameApiResolver.GetCharacterByGUIDMethod.Invoke(charMgr,
-                        new object[] { msg.CharacterGuid });
-                    Plugin.Log.LogInfo($"[Paramulti] Step2: GetCharacterByGUID({msg.CharacterGuid:X})={(assetChar != null ? assetChar.ToString() : "null")}");
-                    if (assetChar == null && msg.CharacterModelGuid != 0)
+
+                    // Find a donor to clone — prefer same model GUID, fall back to any local character.
+                    object donor = null;
+                    if (msg.CharacterModelGuid != 0)
+                        donor = TryFindCharacterAssetByModelGuid(msg.CharacterModelGuid);
+                    if (donor == null)
+                        donor = TryFindAnyLocalAssetCharacter();
+                    Plugin.Log.LogInfo($"[Paramulti] Step2: donor={(donor != null ? donor.GetType().Name : "null")}, donorGUID={GetAssetGuid(donor):X}");
+
+                    if (donor != null)
                     {
-                        assetChar = TryFindCharacterAssetByModelGuid(msg.CharacterModelGuid);
-                        Plugin.Log.LogInfo($"[Paramulti] Step2: fallback TryFindCharacterAssetByModelGuid={msg.CharacterModelGuid:X}={(assetChar != null ? assetChar.ToString() : "null")}");
-                    }
-                    if (assetChar != null)
-                    {
-                        var cloneMethod = assetChar.GetType().GetMethod("MemberwiseClone",
-                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                        Plugin.Log.LogInfo($"[Paramulti] Step2: MemberwiseClone method={(cloneMethod != null ? "found" : "null")}");
-                        if (cloneMethod != null)
+                        var cloneMethod = donor.GetType().GetMethod("MemberwiseClone",
+                            BindingFlags.NonPublic | BindingFlags.Instance);
+                        clonedChar = cloneMethod?.Invoke(donor, null);
+
+                        if (clonedChar != null)
                         {
-                            var clonedChar = cloneMethod.Invoke(assetChar, null);
-                            if (clonedChar != null)
+                            SetAssetGuid(clonedChar, msg.CharacterGuid);
+                            ForcePremadeTypeNo(clonedChar);
+
+                            // The clone shares Data/Visual references with the donor (shallow copy).
+                            // Do NOT mutate Data here (name, pathfinding, etc.) — it would corrupt the donor.
+
+                            injected = InjectIntoAssetManagerAssets(msg.CharacterGuid, clonedChar);
+                            Plugin.Log.LogInfo($"[Paramulti] Step2: inject _assets[{msg.CharacterGuid:X}]={injected}");
+
+                            if (injected)
                             {
-                                var guidProp = clonedChar.GetType().GetProperty("GUID");
-                                guidProp?.SetValue(clonedChar, msg.CharacterGuid);
+                                ParalivesGameApiResolver.RegisterCharacterMethod?.Invoke(charMgr, new object[] { clonedChar });
 
-                                var dataProp = clonedChar.GetType().GetProperty("Data");
-                                var data = dataProp?.GetValue(clonedChar);
-                                if (data != null)
+                                var visual = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(
+                                    charMgr, new object[] { msg.CharacterGuid });
+                                Plugin.Log.LogInfo($"[Paramulti] Step2: LoadCharacterVisual({msg.CharacterGuid:X})={(visual != null ? visual.GetType().Name : "null")}");
+
+                                if (visual != null)
                                 {
-                                    var firstNameField = data.GetType().GetField("FirstName");
-                                    firstNameField?.SetValue(data, msg.FullName);
-                                    var fullNameField = data.GetType().GetField("FullName");
-                                    fullNameField?.SetValue(data, msg.FullName);
+                                    var visualTransform = ExtractTransform(visual);
+                                    if (visualTransform != null && entry.ControlledTransform != null)
+                                    {
+                                        visualTransform.SetParent(entry.ControlledTransform, false);
+                                        visualTransform.localPosition = Vector3.zero;
+                                        visualTransform.localRotation = Quaternion.identity;
+                                        StripInputComponents(visualTransform);
+                                        entry.GameNativeCharacter = clonedChar;
+                                        entry.IsGameNative = true;
+                                        Plugin.Log.LogInfo($"[Paramulti] Game-native visual attached for player {msg.PlayerId} ({visualTransform.gameObject.name})");
+                                    }
                                 }
-
-                                var regMethod = ParalivesGameApiResolver.RegisterCharacterMethod;
-                                Plugin.Log.LogInfo($"[Paramulti] Step2: RegisterCharacter method={(regMethod != null ? "found" : "null")}");
-                                if (regMethod != null)
+                                else
                                 {
-                                    regMethod.Invoke(charMgr, new object[] { clonedChar });
-                                    Plugin.Log.LogInfo($"[Paramulti] Step2: RegisterCharacter called for player {msg.PlayerId}");
-
-                                    // Try LoadCharacterVisual with multiple GUIDs:
-                                    // 1. Original AssetCharacter GUID (the one already registered with the game)
-                                    // 2. Cloned character GUID (the one we just assigned)
-                                    // 3. Model GUID (template GUID)
-                                    var origGuidProp = assetChar.GetType().GetProperty("GUID");
-                                    var origGuid = origGuidProp != null ? (ulong)origGuidProp.GetValue(assetChar) : 0UL;
-                                    Plugin.Log.LogInfo($"[Paramulti] Step2: original AssetCharacter GUID={origGuid:X}, cloned GUID={msg.CharacterGuid:X}, model GUID={msg.CharacterModelGuid:X}");
-
-                                    object visual = null;
-                                    foreach (var guid in new[] { origGuid, msg.CharacterGuid, msg.CharacterModelGuid })
-                                    {
-                                        if (guid == 0) continue;
-                                        visual = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(
-                                            charMgr, new object[] { guid });
-                                        Plugin.Log.LogInfo($"[Paramulti] Step2: LoadCharacterVisual({guid:X})={(visual != null ? visual.ToString() : "null")}");
-                                        if (visual != null) break;
-
-                                        visual = ParalivesGameApiResolver.GetLoadedCharacterVisualMethod.Invoke(
-                                            charMgr, new object[] { guid });
-                                        Plugin.Log.LogInfo($"[Paramulti] Step2: GetLoadedCharacterVisual({guid:X})={(visual != null ? visual.ToString() : "null")}");
-                                        if (visual != null) break;
-                                    }
-
-                                    if (visual != null)
-                                    {
-                                        var visualTransform = ExtractTransform(visual);
-                                        Plugin.Log.LogInfo($"[Paramulti] Step2: ExtractTransform result={(visualTransform != null ? visualTransform.gameObject.name : "null")}");
-                                        if (visualTransform != null && entry.ControlledTransform != null)
-                                        {
-                                            visualTransform.SetParent(entry.ControlledTransform, false);
-                                            visualTransform.localPosition = Vector3.zero;
-                                            visualTransform.localRotation = Quaternion.identity;
-                                            entry.GameNativeCharacter = clonedChar;
-                                            entry.IsGameNative = true;
-                                            DisablePathfinding(clonedChar);
-                                            Plugin.Log.LogInfo($"[Paramulti] Game-native visual attached for player {msg.PlayerId}");
-                                        }
-                                    }
-                                    else
-                                    {
-                                        Plugin.Log.LogInfo("[Paramulti] Step2: Could not load visual via any GUID");
-                                    }
+                                    Plugin.Log.LogInfo("[Paramulti] Step2: LoadCharacterVisual returned null after _assets injection — rolling back");
+                                    RemoveFromAssetManagerAssets(msg.CharacterGuid);
+                                    RemoveFromCharacterManagerList(clonedChar);
+                                    injected = false;
                                 }
                             }
                         }
@@ -1749,6 +1808,8 @@ namespace ParalivesMultiplayer.Session
                 {
                     var inner = gnex.InnerException != null ? gnex.InnerException.Message : gnex.Message;
                     Plugin.Log.LogWarning($"[Paramulti] Game-native character spawn failed (will use fallback): {inner}");
+                    if (injected) RemoveFromAssetManagerAssets(msg.CharacterGuid);
+                    if (clonedChar != null) RemoveFromCharacterManagerList(clonedChar);
                 }
             }
 
