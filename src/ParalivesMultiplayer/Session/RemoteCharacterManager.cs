@@ -493,8 +493,8 @@ namespace ParalivesMultiplayer.Session
         }
 
         // Resolve the AssetCharacter the local player is actually controlling.
-        // PlayerManager.GetHybridPlayer(0).Player.GetSelectedCharacterGUID() returns the active sim;
-        // this is the right source for "what should the proxy on remote clients look like."
+        // Prefer Player.CameraCurrentCharacterFollowTarget (the in-world sim the camera tracks)
+        // since SelectedCharactersGUID[0] can also point at the character-creator/photo-mode copy.
         static object TryGetSelectedAssetCharacter()
         {
             try
@@ -510,16 +510,33 @@ namespace ParalivesMultiplayer.Session
                 var player = playerProp?.GetValue(hybrid);
                 if (player == null) return null;
 
-                var method = player.GetType().GetMethod("GetSelectedCharacterGUID",
+                ulong guid = 0;
+
+                // 1) Live-world follow target (best signal).
+                var followField = player.GetType().GetField("CameraCurrentCharacterFollowTarget",
                     BindingFlags.Public | BindingFlags.Instance);
-                if (method == null) return null;
-                ulong selectedGuid = (ulong)method.Invoke(player, null);
-                if (selectedGuid == 0) return null;
+                if (followField != null)
+                {
+                    try { guid = (ulong)followField.GetValue(player); } catch { }
+                }
+
+                // 2) Fall back to GetSelectedCharacterGUID() (creator/multi-select head).
+                if (guid == 0)
+                {
+                    var method = player.GetType().GetMethod("GetSelectedCharacterGUID",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (method != null)
+                    {
+                        try { guid = (ulong)method.Invoke(player, null); } catch { }
+                    }
+                }
+
+                if (guid == 0) return null;
 
                 var getChar = ParalivesGameApiResolver.GetCharacterByGUIDMethod;
                 var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
                 if (getChar == null || charMgr == null) return null;
-                return getChar.Invoke(charMgr, new object[] { selectedGuid });
+                return getChar.Invoke(charMgr, new object[] { guid });
             }
             catch (Exception ex)
             {
@@ -1977,6 +1994,7 @@ namespace ParalivesMultiplayer.Session
             Vector3 spawnPos = msg.LastKnownPosition.ToUnity();
 
             // Check if we already have this character — update position instead of recreating
+            bool needsRemoveOldProxy = false;
             lock (_lock)
             {
                 if (_remoteCharacters.TryGetValue(msg.PlayerId, out var existingEntry))
@@ -1995,7 +2013,17 @@ namespace ParalivesMultiplayer.Session
                         Plugin.Log.LogInfo($"[Paramulti] Updated existing proxy for player {msg.PlayerId} to pos={newPos}");
                         return;
                     }
+
+                    // Sender switched sims — the existing proxy's CharacterGuid no longer matches.
+                    // Tear down the old one fully (scene GO, registered AssetCharacter, _assets
+                    // injection) before spawning the new one so we don't leak duplicates.
+                    Plugin.Log.LogInfo($"[Paramulti] Player {msg.PlayerId} switched sim: {existingEntry.CharacterGuid:X} -> {msg.CharacterGuid:X}, removing old proxy");
+                    needsRemoveOldProxy = true;
                 }
+            }
+            if (needsRemoveOldProxy)
+            {
+                RemoveRemoteCharacter(msg.PlayerId);
             }
 
             // Step 1: Always create the visible fallback cube FIRST — guaranteed to render and serves as parent
