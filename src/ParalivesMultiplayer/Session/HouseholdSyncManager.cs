@@ -66,13 +66,11 @@ namespace ParalivesMultiplayer.Session
                     return;
                 }
 
-                // Check if already present
+                // Household.Data.Characters is List<ulong> of GUIDs, not List<AssetCharacter>.
                 bool alreadyPresent = false;
                 foreach (var c in chars)
                 {
-                    var guidField = c.GetType().GetField("GUID", BindingFlags.Public | BindingFlags.Instance);
-                    var guid = guidField != null ? (ulong)guidField.GetValue(c) : 0UL;
-                    if (guid == characterGuid)
+                    if (c is ulong g && g == characterGuid)
                     {
                         alreadyPresent = true;
                         break;
@@ -81,7 +79,7 @@ namespace ParalivesMultiplayer.Session
 
                 if (!alreadyPresent)
                 {
-                    chars.Add(assetCharacter);
+                    chars.Add(characterGuid);
                     Plugin.Log.LogInfo($"[HouseholdSync] Added character GUID={characterGuid:X} to current household. Total={chars.Count}");
                 }
                 else
@@ -141,21 +139,10 @@ namespace ParalivesMultiplayer.Session
                 var chars = charsField.GetValue(data) as System.Collections.IList;
                 if (chars == null) return;
 
-                object toRemove = null;
-                foreach (var c in chars)
+                // Household.Data.Characters is List<ulong>; remove the GUID, not the object.
+                if (chars.Contains(characterGuid))
                 {
-                    var guidField = c.GetType().GetField("GUID", BindingFlags.Public | BindingFlags.Instance);
-                    var guid = guidField != null ? (ulong)guidField.GetValue(c) : 0UL;
-                    if (guid == characterGuid)
-                    {
-                        toRemove = c;
-                        break;
-                    }
-                }
-
-                if (toRemove != null)
-                {
-                    chars.Remove(toRemove);
+                    chars.Remove(characterGuid);
                     Plugin.Log.LogInfo($"[HouseholdSync] Removed character GUID={characterGuid:X} from household. Remaining={chars.Count}");
                 }
             }
