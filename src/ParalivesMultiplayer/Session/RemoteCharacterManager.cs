@@ -605,6 +605,26 @@ namespace ParalivesMultiplayer.Session
                 var cloneVisualProp = clonedChar.GetType().GetProperty("Visual");
                 if (cloneVisualProp == null || !cloneVisualProp.CanWrite) return false;
                 cloneVisualProp.SetValue(clonedChar, clonedVisual);
+
+                // Defense: the AssetCharacter class also reads _assetCharacterVisual directly in
+                // its own internals (mesh composition, equipment). The Visual setter only writes
+                // _fakePhotoModeVisual, so we additionally overwrite the private backing field +
+                // mark it as loaded so the getter never tries to reload the donor's visual from disk.
+                var cloneType = clonedChar.GetType();
+                Type t = cloneType;
+                while (t != null)
+                {
+                    var f = t.GetField("_assetCharacterVisual", BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (f != null) { try { f.SetValue(clonedChar, clonedVisual); } catch { } break; }
+                    t = t.BaseType;
+                }
+                t = cloneType;
+                while (t != null)
+                {
+                    var f = t.GetField("_isCharacterVisualLoaded", BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (f != null) { try { f.SetValue(clonedChar, true); } catch { } break; }
+                    t = t.BaseType;
+                }
                 return true;
             }
             catch (Exception ex)
