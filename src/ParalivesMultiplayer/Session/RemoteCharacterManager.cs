@@ -279,10 +279,22 @@ namespace ParalivesMultiplayer.Session
             // Reject Character Creator visual
             if (name.IndexOf("CharacterCreator", StringComparison.OrdinalIgnoreCase) >= 0) return false;
             if (name.IndexOf("CreatorVisual", StringComparison.OrdinalIgnoreCase) >= 0) return false;
-            // Reject objects deep in void space (Character Creator coordinates)
+            // Reject void / character-creator / photo-mode coordinate space.
+            // Ground in Paralives is around Y≈0..10; anything below Y=-1 is below the world.
+            if (t.position.y < -1f) return false;
             if (t.position.x > 500f || t.position.x < -500f) return false;
             if (t.position.y > 500f || t.position.y < -500f) return false;
             if (t.position.z > 500f || t.position.z < -500f) return false;
+            return true;
+        }
+
+        // A position is in-world if it's not in the character-creator/photo-mode void coordinate space.
+        static bool IsValidWorldPosition(UnityEngine.Vector3 p)
+        {
+            if (p.y < -1f) return false;
+            if (p.x > 500f || p.x < -500f) return false;
+            if (p.y > 500f) return false;
+            if (p.z > 500f || p.z < -500f) return false;
             return true;
         }
 
@@ -1759,16 +1771,24 @@ namespace ParalivesMultiplayer.Session
                 // _localCharacterTransform which may belong to a different household member.
                 NetVector3 pos = new NetVector3(0f, 0f, 0f);
                 NetQuaternion rot = new NetQuaternion(0f, 0f, 0f, 1f);
+                bool havePos = false;
                 var thisTransform = TryGetRuntimeTransformForCharacter(c, guid);
-                if (thisTransform != null)
+                if (thisTransform != null && IsValidWorldPosition(thisTransform.position))
                 {
                     pos = thisTransform.position.FromUnity();
                     rot = thisTransform.rotation.FromUnity();
+                    havePos = true;
                 }
-                else if (_localCharacterTransform != null)
+                else if (_localCharacterTransform != null && IsValidWorldPosition(_localCharacterTransform.position))
                 {
                     pos = _localCharacterTransform.position.FromUnity();
                     rot = _localCharacterTransform.rotation.FromUnity();
+                    havePos = true;
+                }
+                if (!havePos)
+                {
+                    Plugin.Log.LogInfo($"[Paramulti] Skipping sync for GUID={guid:X}: no valid world position (selected sim is in void/creator space)");
+                    return null;
                 }
 
                 return new ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync
@@ -1922,13 +1942,14 @@ namespace ParalivesMultiplayer.Session
 
         static ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync BuildMinimalCharacterDataSync()
         {
+            if (_localCharacterTransform == null || !IsValidWorldPosition(_localCharacterTransform.position))
+            {
+                Plugin.Log.LogInfo("[Paramulti] Skipping MINIMAL sync: no valid world position");
+                return null;
+            }
             var guid = GenerateGuidForPlayer(MultiplayerSession.LocalPlayerId);
-            var pos = _localCharacterTransform != null
-                ? _localCharacterTransform.position.FromUnity()
-                : new NetVector3(0f, 1f, 0f);
-            var rot = _localCharacterTransform != null
-                ? _localCharacterTransform.rotation.FromUnity()
-                : new NetQuaternion(0f, 0f, 0f, 1f);
+            var pos = _localCharacterTransform.position.FromUnity();
+            var rot = _localCharacterTransform.rotation.FromUnity();
 
             var modelGuid = GetLocalCharacterModelGuid();
             var msg = new ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync
@@ -1953,6 +1974,11 @@ namespace ParalivesMultiplayer.Session
 
         static ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync BuildFallbackCharacterDataSync(ulong guid)
         {
+            if (_localCharacterTransform == null || !IsValidWorldPosition(_localCharacterTransform.position))
+            {
+                Plugin.Log.LogInfo("[Paramulti] Skipping FALLBACK sync: no valid world position");
+                return null;
+            }
             if (guid == 0)
                 guid = GetLocalCharacterGuid();
             if (guid == 0)
