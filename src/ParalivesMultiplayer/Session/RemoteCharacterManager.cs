@@ -1738,6 +1738,22 @@ namespace ParalivesMultiplayer.Session
                 var postureField = dataType.GetField("CurrentPosture");
                 var deadField = dataType.GetField("IsDeadOrTakenAway");
 
+                // Position/rotation should come from THIS sim's runtime visual — not the cached
+                // _localCharacterTransform which may belong to a different household member.
+                NetVector3 pos = new NetVector3(0f, 0f, 0f);
+                NetQuaternion rot = new NetQuaternion(0f, 0f, 0f, 1f);
+                var thisTransform = TryGetRuntimeTransformForCharacter(c, guid);
+                if (thisTransform != null)
+                {
+                    pos = thisTransform.position.FromUnity();
+                    rot = thisTransform.rotation.FromUnity();
+                }
+                else if (_localCharacterTransform != null)
+                {
+                    pos = _localCharacterTransform.position.FromUnity();
+                    rot = _localCharacterTransform.rotation.FromUnity();
+                }
+
                 return new ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync
                 {
                     PlayerId = MultiplayerSession.LocalPlayerId,
@@ -1749,8 +1765,8 @@ namespace ParalivesMultiplayer.Session
                     CharacterModelGuid = modelField != null ? (ulong)modelField.GetValue(data) : 0UL,
                     CurrentPostureGuid = postureField != null ? (ulong)postureField.GetValue(data) : 0UL,
                     IsDeadOrTakenAway = deadField != null ? (bool)deadField.GetValue(data) : false,
-                    LastKnownPosition = _localCharacterTransform != null ? _localCharacterTransform.position.FromUnity() : new NetVector3(0f, 0f, 0f),
-                    LastKnownRotation = _localCharacterTransform != null ? _localCharacterTransform.rotation.FromUnity() : new NetQuaternion(0f, 0f, 0f, 1f),
+                    LastKnownPosition = pos,
+                    LastKnownRotation = rot,
                     CharacterVisualJson = TrySerializeVisualJsonFromCharacter(c)
                 };
             }
@@ -1759,6 +1775,23 @@ namespace ParalivesMultiplayer.Session
                 Plugin.Log.LogWarning($"[Paramulti] BuildCharacterDataSyncFromAssetCharacter failed: {ex.Message}");
                 return null;
             }
+        }
+
+        // CharacterManager.GetLoadedCharacterVisual(guid) → CharacterVisual → transform.
+        // Returns the transform of the live in-world model for this AssetCharacter, or null.
+        static Transform TryGetRuntimeTransformForCharacter(object assetCharacter, ulong guid)
+        {
+            try
+            {
+                if (guid == 0) guid = GetAssetGuid(assetCharacter);
+                if (guid == 0) return null;
+                var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+                var method = ParalivesGameApiResolver.GetLoadedCharacterVisualMethod;
+                if (charMgr == null || method == null) return null;
+                var visual = method.Invoke(charMgr, new object[] { guid });
+                return ExtractTransform(visual);
+            }
+            catch { return null; }
         }
 
         public static ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync BuildLocalCharacterDataSync()
