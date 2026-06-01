@@ -464,6 +464,16 @@ namespace ParalivesMultiplayer.Session
             catch { return false; }
         }
 
+        static bool AssetManagerHasAsset(ulong guid)
+        {
+            var am = ParalivesGameApiResolver.AssetManagerInstance;
+            if (am == null) return false;
+            var f = am.GetType().GetField("_assets", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (f == null) return false;
+            var assets = f.GetValue(am) as System.Collections.IDictionary;
+            return assets != null && assets.Contains(guid);
+        }
+
         // PremadeType.No is enum value 0. RegisterCharacter is a no-op for non-No premade types.
         static bool ForcePremadeTypeNo(object assetCharacter)
         {
@@ -703,6 +713,36 @@ namespace ParalivesMultiplayer.Session
             catch (Exception ex)
             {
                 Plugin.Log.LogWarning($"[Paramulti] TryApplyRemoteVisualToClone failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        // After MemberwiseClone, clonedChar.Data is the *same reference* as donor.Data.
+        // The game runs autonomy/needs on every Characters list entry; both donor and clone
+        // would mutate the same AssetCharacterData, depleting the donor's stats 2x and killing
+        // the local sim. AssetCharacterData has a built-in Copy() — use it to fork the state.
+        static bool TryIsolateClonedCharacterData(object clonedChar)
+        {
+            if (clonedChar == null) return false;
+            try
+            {
+                var dataProp = clonedChar.GetType().GetProperty("Data");
+                if (dataProp == null || !dataProp.CanWrite) return false;
+                var data = dataProp.GetValue(clonedChar);
+                if (data == null) return false;
+
+                var copyMethod = data.GetType().GetMethod("Copy",
+                    BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+                if (copyMethod == null) return false;
+                var copied = copyMethod.Invoke(data, null);
+                if (copied == null) return false;
+
+                dataProp.SetValue(clonedChar, copied);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] TryIsolateClonedCharacterData failed: {ex.Message}");
                 return false;
             }
         }
@@ -2013,6 +2053,35 @@ namespace ParalivesMultiplayer.Session
         {
             if (msg == null) return;
 
+            // Drop messages echoed back to us via the host's rebroadcast. Processing our own sync
+            // injects our own AssetCharacter GUID a second time → LoadedCharacterVisuals.Add throws
+            // and worse, ApplyRemoteCharacterDataSync would mutate our own household state.
+            if (msg.PlayerId == MultiplayerSession.LocalPlayerId)
+            {
+                Plugin.Log.LogDebug($"[Paramulti] Ignoring echoed self sync (PlayerId={msg.PlayerId})");
+                return;
+            }
+
+            // Reject collisions with characters we don't already own. If this GUID exists in
+            // AssetManager._assets and isn't tracked in our _remoteCharacters dict, it's a real
+            // local AssetCharacter — overwriting it would corrupt the donor's needs/interactions.
+            if (msg.CharacterGuid != 0 && AssetManagerHasAsset(msg.CharacterGuid))
+            {
+                bool isOurs = false;
+                lock (_lock)
+                {
+                    foreach (var e in _remoteCharacters.Values)
+                    {
+                        if (e.CharacterGuid == msg.CharacterGuid) { isOurs = true; break; }
+                    }
+                }
+                if (!isOurs)
+                {
+                    Plugin.Log.LogWarning($"[Paramulti] Ignoring sync from player {msg.PlayerId}: GUID={msg.CharacterGuid:X} collides with a real local AssetCharacter");
+                    return;
+                }
+            }
+
             Plugin.Log.LogInfo($"[Paramulti] Applying remote character data sync from player {msg.PlayerId}: GUID={msg.CharacterGuid:X}, Name={msg.FullName}, Model={msg.CharacterModelGuid:X}, pos={msg.LastKnownPosition}");
 
             CharacterOwnershipManager.RegisterOwnership(msg.PlayerId, msg.CharacterGuid);
@@ -2098,8 +2167,13 @@ namespace ParalivesMultiplayer.Session
                             SetAssetGuid(clonedChar, msg.CharacterGuid);
                             ForcePremadeTypeNo(clonedChar);
 
-                            // The clone shares Data/Visual references with the donor (shallow copy).
-                            // Do NOT mutate Data here (name, pathfinding, etc.) — it would corrupt the donor.
+                            // The clone shares Data/Visual references with the donor (MemberwiseClone
+                            // is shallow). If we leave Data shared, the game runs needs/autonomy on
+                            // BOTH characters but mutates ONE AssetCharacterData — depleting the
+                            // donor's needs at 2x rate and killing the local sim within ~2000 ticks.
+                            // Deep-copy via the game's built-in AssetCharacterData.Copy().
+                            bool dataIsolated = TryIsolateClonedCharacterData(clonedChar);
+                            Plugin.Log.LogInfo($"[Paramulti] Step2: data isolated={dataIsolated}");
 
                             bool visualApplied = TryApplyRemoteVisualToClone(clonedChar, donor, msg.CharacterVisualJson);
                             Plugin.Log.LogInfo($"[Paramulti] Step2: remote visual applied={visualApplied}, jsonBytes={msg.CharacterVisualJson?.Length ?? 0}");
