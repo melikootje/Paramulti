@@ -845,6 +845,12 @@ namespace ParalivesMultiplayer.Networking
                     if (IsHost)
                         SendToAllExcept(msg.SenderClientId, selectChar);
                     break;
+
+                case MsgTimeSync timeSync:
+                    Session.TimeSyncManager.Apply(timeSync);
+                    if (IsHost)
+                        SendToAllExcept(msg.SenderClientId, timeSync);
+                    break;
             }
         }
 

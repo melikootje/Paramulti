@@ -296,6 +296,8 @@ namespace ParalivesMultiplayer
                     TrySendLocalCharacterData();
                 }
 
+                Session.TimeSyncManager.TryBroadcastIfHost();
+
                 if (MultiplayerSession.IsHost)
                     DesyncDetector.TickCheck();
                 InputRouter.UpdateDecay();

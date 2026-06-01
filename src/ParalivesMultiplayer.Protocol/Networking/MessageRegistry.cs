@@ -64,6 +64,7 @@ namespace ParalivesMultiplayer.Networking
             Register(new Messages.MsgInteractionRequest());
             Register(new Messages.MsgSelectCharacter());
             Register(new Messages.MsgAnimationState());
+            Register(new Messages.MsgTimeSync());
             LogAction($"[MessageRegistry] Registered {_registry.Count} message types.");
         }
     }
