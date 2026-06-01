@@ -2053,72 +2053,44 @@ namespace ParalivesMultiplayer.Session
         {
             if (msg == null) return;
 
-            // Drop messages echoed back to us via the host's rebroadcast. Processing our own sync
-            // injects our own AssetCharacter GUID a second time → LoadedCharacterVisuals.Add throws
-            // and worse, ApplyRemoteCharacterDataSync would mutate our own household state.
+            // Drop messages echoed back to us via the host's rebroadcast.
             if (msg.PlayerId == MultiplayerSession.LocalPlayerId)
             {
                 Plugin.Log.LogDebug($"[Paramulti] Ignoring echoed self sync (PlayerId={msg.PlayerId})");
                 return;
             }
 
-            // Reject collisions with characters we don't already own. If this GUID exists in
-            // AssetManager._assets and isn't tracked in our _remoteCharacters dict, it's a real
-            // local AssetCharacter — overwriting it would corrupt the donor's needs/interactions.
-            if (msg.CharacterGuid != 0 && AssetManagerHasAsset(msg.CharacterGuid))
-            {
-                bool isOurs = false;
-                lock (_lock)
-                {
-                    foreach (var e in _remoteCharacters.Values)
-                    {
-                        if (e.CharacterGuid == msg.CharacterGuid) { isOurs = true; break; }
-                    }
-                }
-                if (!isOurs)
-                {
-                    Plugin.Log.LogWarning($"[Paramulti] Ignoring sync from player {msg.PlayerId}: GUID={msg.CharacterGuid:X} collides with a real local AssetCharacter");
-                    return;
-                }
-            }
+            // Use a SYNTHETIC, per-player GUID for the proxy in _assets. The sender's
+            // msg.CharacterGuid may collide with our own local AssetCharacters (e.g. when both
+            // peers play a shared save). Synthesizing avoids the collision entirely while still
+            // letting us inject + LoadCharacterVisual normally. msg.CharacterGuid is kept only
+            // for logging context.
+            ulong proxyGuid = GenerateGuidForPlayer(msg.PlayerId);
 
-            Plugin.Log.LogInfo($"[Paramulti] Applying remote character data sync from player {msg.PlayerId}: GUID={msg.CharacterGuid:X}, Name={msg.FullName}, Model={msg.CharacterModelGuid:X}, pos={msg.LastKnownPosition}");
+            Plugin.Log.LogInfo($"[Paramulti] Applying remote character data sync from player {msg.PlayerId}: sourceGUID={msg.CharacterGuid:X}, proxyGUID={proxyGuid:X}, Name={msg.FullName}, Model={msg.CharacterModelGuid:X}, pos={msg.LastKnownPosition}");
 
-            CharacterOwnershipManager.RegisterOwnership(msg.PlayerId, msg.CharacterGuid);
+            CharacterOwnershipManager.RegisterOwnership(msg.PlayerId, proxyGuid);
 
             Vector3 spawnPos = msg.LastKnownPosition.ToUnity();
 
-            // Check if we already have this character — update position instead of recreating
-            bool needsRemoveOldProxy = false;
+            // Existing proxy? Update position; no GUID-change tracking needed because proxyGuid
+            // is stable per playerId.
             lock (_lock)
             {
                 if (_remoteCharacters.TryGetValue(msg.PlayerId, out var existingEntry))
                 {
-                    if (existingEntry.CharacterGuid == msg.CharacterGuid)
+                    var newPos = msg.LastKnownPosition.ToUnity();
+                    var newRot = msg.LastKnownRotation.ToUnity();
+                    if (existingEntry.ControlledTransform != null)
                     {
-                        var newPos = msg.LastKnownPosition.ToUnity();
-                        var newRot = msg.LastKnownRotation.ToUnity();
-                        if (existingEntry.ControlledTransform != null)
-                        {
-                            existingEntry.ControlledTransform.position = newPos;
-                            existingEntry.ControlledTransform.rotation = newRot;
-                            existingEntry.LastKnownPosition = newPos;
-                            existingEntry.LastKnownRotation = newRot;
-                        }
-                        Plugin.Log.LogInfo($"[Paramulti] Updated existing proxy for player {msg.PlayerId} to pos={newPos}");
-                        return;
+                        existingEntry.ControlledTransform.position = newPos;
+                        existingEntry.ControlledTransform.rotation = newRot;
+                        existingEntry.LastKnownPosition = newPos;
+                        existingEntry.LastKnownRotation = newRot;
                     }
-
-                    // Sender switched sims — the existing proxy's CharacterGuid no longer matches.
-                    // Tear down the old one fully (scene GO, registered AssetCharacter, _assets
-                    // injection) before spawning the new one so we don't leak duplicates.
-                    Plugin.Log.LogInfo($"[Paramulti] Player {msg.PlayerId} switched sim: {existingEntry.CharacterGuid:X} -> {msg.CharacterGuid:X}, removing old proxy");
-                    needsRemoveOldProxy = true;
+                    Plugin.Log.LogInfo($"[Paramulti] Updated existing proxy for player {msg.PlayerId} to pos={newPos}");
+                    return;
                 }
-            }
-            if (needsRemoveOldProxy)
-            {
-                RemoveRemoteCharacter(msg.PlayerId);
             }
 
             // Step 1: Always create the visible fallback cube FIRST — guaranteed to render and serves as parent
@@ -2128,17 +2100,14 @@ namespace ParalivesMultiplayer.Session
                 Plugin.Log.LogError($"[Paramulti] CRITICAL: Could not create fallback proxy for player {msg.PlayerId}");
                 return;
             }
-            entry.CharacterGuid = msg.CharacterGuid;
+            entry.CharacterGuid = proxyGuid;
             entry.ControlledTransform.position = spawnPos;
             entry.ControlledTransform.rotation = msg.LastKnownRotation.ToUnity();
 
-            // Step 2: Spawn a game-native CharacterVisual for the remote player.
-            // Strategy: clone a local AssetCharacter (donor), reassign its GUID to msg.CharacterGuid,
-            // and INJECT it into AssetManager._assets so LoadCharacterVisual can find it.
-            // (LoadCharacterVisual is hard-coupled to AssetManager._assets[guid]; registering with
-            //  CharacterManager.RegisterCharacter alone is not enough.)
-            Plugin.Log.LogInfo($"[Paramulti] Step2: charGuid={msg.CharacterGuid:X}, modelGuid={msg.CharacterModelGuid:X}");
-            if (msg.CharacterGuid != 0 && ParalivesGameApiResolver.CharacterManagerInstance != null &&
+            // Step 2: Spawn a game-native CharacterVisual using the synthesized proxyGuid as the
+            // injection key (NOT msg.CharacterGuid, which may collide with our real local assets).
+            Plugin.Log.LogInfo($"[Paramulti] Step2: proxyGuid={proxyGuid:X}, sourceGuid={msg.CharacterGuid:X}, modelGuid={msg.CharacterModelGuid:X}");
+            if (ParalivesGameApiResolver.CharacterManagerInstance != null &&
                 ParalivesGameApiResolver.AssetManagerInstance != null &&
                 ParalivesGameApiResolver.LoadCharacterVisualMethod != null)
             {
@@ -2164,30 +2133,25 @@ namespace ParalivesMultiplayer.Session
 
                         if (clonedChar != null)
                         {
-                            SetAssetGuid(clonedChar, msg.CharacterGuid);
+                            SetAssetGuid(clonedChar, proxyGuid);
                             ForcePremadeTypeNo(clonedChar);
 
-                            // The clone shares Data/Visual references with the donor (MemberwiseClone
-                            // is shallow). If we leave Data shared, the game runs needs/autonomy on
-                            // BOTH characters but mutates ONE AssetCharacterData — depleting the
-                            // donor's needs at 2x rate and killing the local sim within ~2000 ticks.
-                            // Deep-copy via the game's built-in AssetCharacterData.Copy().
                             bool dataIsolated = TryIsolateClonedCharacterData(clonedChar);
                             Plugin.Log.LogInfo($"[Paramulti] Step2: data isolated={dataIsolated}");
 
                             bool visualApplied = TryApplyRemoteVisualToClone(clonedChar, donor, msg.CharacterVisualJson);
                             Plugin.Log.LogInfo($"[Paramulti] Step2: remote visual applied={visualApplied}, jsonBytes={msg.CharacterVisualJson?.Length ?? 0}");
 
-                            injected = InjectIntoAssetManagerAssets(msg.CharacterGuid, clonedChar);
-                            Plugin.Log.LogInfo($"[Paramulti] Step2: inject _assets[{msg.CharacterGuid:X}]={injected}");
+                            injected = InjectIntoAssetManagerAssets(proxyGuid, clonedChar);
+                            Plugin.Log.LogInfo($"[Paramulti] Step2: inject _assets[{proxyGuid:X}]={injected}");
 
                             if (injected)
                             {
                                 ParalivesGameApiResolver.RegisterCharacterMethod?.Invoke(charMgr, new object[] { clonedChar });
 
                                 var visual = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(
-                                    charMgr, new object[] { msg.CharacterGuid });
-                                Plugin.Log.LogInfo($"[Paramulti] Step2: LoadCharacterVisual({msg.CharacterGuid:X})={(visual != null ? visual.GetType().Name : "null")}");
+                                    charMgr, new object[] { proxyGuid });
+                                Plugin.Log.LogInfo($"[Paramulti] Step2: LoadCharacterVisual({proxyGuid:X})={(visual != null ? visual.GetType().Name : "null")}");
 
                                 if (visual != null)
                                 {
@@ -2206,7 +2170,7 @@ namespace ParalivesMultiplayer.Session
                                 else
                                 {
                                     Plugin.Log.LogInfo("[Paramulti] Step2: LoadCharacterVisual returned null after _assets injection — rolling back");
-                                    RemoveFromAssetManagerAssets(msg.CharacterGuid);
+                                    RemoveFromAssetManagerAssets(proxyGuid);
                                     RemoveFromCharacterManagerList(clonedChar);
                                     injected = false;
                                 }
@@ -2218,7 +2182,7 @@ namespace ParalivesMultiplayer.Session
                 {
                     var inner = gnex.InnerException != null ? gnex.InnerException.Message : gnex.Message;
                     Plugin.Log.LogWarning($"[Paramulti] Game-native character spawn failed (will use fallback): {inner}");
-                    if (injected) RemoveFromAssetManagerAssets(msg.CharacterGuid);
+                    if (injected) RemoveFromAssetManagerAssets(proxyGuid);
                     if (clonedChar != null) RemoveFromCharacterManagerList(clonedChar);
                 }
             }
