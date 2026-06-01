@@ -2223,14 +2223,19 @@ namespace ParalivesMultiplayer.Session
                 }
             }
 
-            // Step 3: Optionally enhance with prefab clone (cloned local CharacterVisual)
-            var prefabEntry = TryCreatePrefabClone(msg.PlayerId, msg.FullName, spawnPos);
-            if (prefabEntry != null && prefabEntry.ControlledTransform != null && entry.ControlledTransform != null)
+            // Step 3: Fallback prefab clone — only when Step 2 didn't attach a game-native visual.
+            // Otherwise we'd render the local player's sim ON TOP of the remote's correct visual,
+            // making every proxy look like the local user.
+            if (!entry.IsGameNative)
             {
-                prefabEntry.ControlledTransform.SetParent(entry.ControlledTransform, false);
-                prefabEntry.ControlledTransform.localPosition = Vector3.zero;
-                prefabEntry.ControlledTransform.localRotation = Quaternion.identity;
-                Plugin.Log.LogInfo($"[Paramulti] Parented prefab clone to fallback cube for player {msg.PlayerId}");
+                var prefabEntry = TryCreatePrefabClone(msg.PlayerId, msg.FullName, spawnPos);
+                if (prefabEntry != null && prefabEntry.ControlledTransform != null && entry.ControlledTransform != null)
+                {
+                    prefabEntry.ControlledTransform.SetParent(entry.ControlledTransform, false);
+                    prefabEntry.ControlledTransform.localPosition = Vector3.zero;
+                    prefabEntry.ControlledTransform.localRotation = Quaternion.identity;
+                    Plugin.Log.LogInfo($"[Paramulti] Parented prefab clone (fallback) to cube for player {msg.PlayerId}");
+                }
             }
 
             lock (_lock)
