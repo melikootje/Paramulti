@@ -492,6 +492,128 @@ namespace ParalivesMultiplayer.Session
             return list[0];
         }
 
+        // Walk localCharacterTransform → CharacterVisual.CharacterGUID → AssetCharacter.
+        // Works even when ExtractTransform comparison fails (camera-follow case).
+        static object TryGetLocalAssetCharacter()
+        {
+            if (_localCharacterTransform == null) return null;
+            try
+            {
+                ulong characterGuid = 0;
+                foreach (var comp in _localCharacterTransform.GetComponents<Component>())
+                {
+                    if (comp == null || comp.GetType().Name != "CharacterVisual") continue;
+                    var guidField = comp.GetType().GetField("CharacterGUID", BindingFlags.Public | BindingFlags.Instance);
+                    if (guidField != null)
+                    {
+                        characterGuid = (ulong)guidField.GetValue(comp);
+                        break;
+                    }
+                    var guidProp = comp.GetType().GetProperty("CharacterGUID");
+                    if (guidProp != null)
+                    {
+                        characterGuid = (ulong)guidProp.GetValue(comp);
+                        break;
+                    }
+                }
+                if (characterGuid == 0) return null;
+
+                var getCharMethod = ParalivesGameApiResolver.GetCharacterByGUIDMethod;
+                if (getCharMethod == null || ParalivesGameApiResolver.CharacterManagerInstance == null)
+                    return null;
+                return getCharMethod.Invoke(ParalivesGameApiResolver.CharacterManagerInstance, new object[] { characterGuid });
+            }
+            catch { return null; }
+        }
+
+        static string TrySerializeLocalCharacterVisualJson()
+        {
+            try
+            {
+                var local = TryGetLocalAssetCharacter();
+                if (local == null) return "";
+                return TrySerializeVisualJsonFromCharacter(local);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] TrySerializeLocalCharacterVisualJson failed: {ex.Message}");
+                return "";
+            }
+        }
+
+        static string TrySerializeVisualJsonFromCharacter(object assetCharacter)
+        {
+            try
+            {
+                if (assetCharacter == null) return "";
+                var visualProp = assetCharacter.GetType().GetProperty("Visual");
+                var visual = visualProp?.GetValue(assetCharacter);
+                if (visual == null) return "";
+                var dataProp = visual.GetType().GetProperty("Data");
+                var data = dataProp?.GetValue(visual);
+                if (data == null) return "";
+                return JsonUtility.ToJson(data, false);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] TrySerializeVisualJsonFromCharacter failed: {ex.Message}");
+                return "";
+            }
+        }
+
+        // Build a per-clone AssetCharacterVisual whose Data comes from the remote player's JSON.
+        // Assigning via the Visual setter writes to _fakePhotoModeVisual, so the getter returns ours
+        // and the donor's on-disk visual is left untouched.
+        static bool TryApplyRemoteVisualToClone(object clonedChar, object donorChar, string visualJson)
+        {
+            if (clonedChar == null || string.IsNullOrEmpty(visualJson)) return false;
+            try
+            {
+                // Source the visual shell from the donor so type and runtime members are correct.
+                var donorVisualProp = donorChar?.GetType().GetProperty("Visual");
+                var donorVisual = donorVisualProp?.GetValue(donorChar);
+                if (donorVisual == null) return false;
+
+                var visualCloneMethod = donorVisual.GetType().GetMethod("MemberwiseClone",
+                    BindingFlags.NonPublic | BindingFlags.Instance);
+                var clonedVisual = visualCloneMethod?.Invoke(donorVisual, null);
+                if (clonedVisual == null) return false;
+
+                // Replace Data with deserialized remote data.
+                var dataProp = clonedVisual.GetType().GetProperty("Data");
+                if (dataProp == null) return false;
+                var dataType = dataProp.PropertyType;
+                var remoteData = JsonUtility.FromJson(visualJson, dataType);
+                if (remoteData == null) return false;
+                dataProp.SetValue(clonedVisual, remoteData);
+
+                // Mark every Dirty flag so the game recomputes meshes/textures/equipment on render.
+                foreach (var name in new[] { "IsTextureDirty", "IsAutoEquipedDirty",
+                                             "IsMeshCompositionDirty", "AreBoneDeformationsDirty",
+                                             "IsStandaloneItemsDirty", "IsStandaloneItemsDeformationDirty" })
+                {
+                    try { remoteData.GetType().GetProperty(name)?.SetValue(remoteData, true); } catch { }
+                    try
+                    {
+                        var f = remoteData.GetType().GetField(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                        if (f != null && f.FieldType == typeof(bool)) f.SetValue(remoteData, true);
+                    }
+                    catch { }
+                }
+
+                // Assign to the clone (setter targets _fakePhotoModeVisual, bypassing disk reload).
+                var cloneVisualProp = clonedChar.GetType().GetProperty("Visual");
+                if (cloneVisualProp == null || !cloneVisualProp.CanWrite) return false;
+                cloneVisualProp.SetValue(clonedChar, clonedVisual);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] TryApplyRemoteVisualToClone failed: {ex.Message}");
+                return false;
+            }
+        }
+
         static RemoteCharacterEntry TryCreateGameNativeCharacter(int playerId, string playerName, Vector3 spawnPos)
         {
             try
@@ -1599,10 +1721,11 @@ namespace ParalivesMultiplayer.Session
                         CurrentPostureGuid = postureField != null ? (ulong)postureField.GetValue(data) : 0UL,
                         IsDeadOrTakenAway = deadField != null ? (bool)deadField.GetValue(data) : false,
                         LastKnownPosition = _localCharacterTransform != null ? _localCharacterTransform.position.FromUnity() : new NetVector3(0f, 0f, 0f),
-                        LastKnownRotation = _localCharacterTransform != null ? _localCharacterTransform.rotation.FromUnity() : new NetQuaternion(0f, 0f, 0f, 1f)
+                        LastKnownRotation = _localCharacterTransform != null ? _localCharacterTransform.rotation.FromUnity() : new NetQuaternion(0f, 0f, 0f, 1f),
+                        CharacterVisualJson = TrySerializeVisualJsonFromCharacter(c)
                     };
 
-                    Plugin.Log.LogInfo($"[Paramulti] Built local character data sync: GUID={guid:X}, Name={msg.FullName}, Model={msg.CharacterModelGuid:X}");
+                    Plugin.Log.LogInfo($"[Paramulti] Built local character data sync: GUID={guid:X}, Name={msg.FullName}, Model={msg.CharacterModelGuid:X}, visualJsonBytes={msg.CharacterVisualJson?.Length ?? 0}");
                     return msg;
                 }
 
@@ -1649,10 +1772,11 @@ namespace ParalivesMultiplayer.Session
                 CurrentPostureGuid = 0UL,
                 IsDeadOrTakenAway = false,
                 LastKnownPosition = pos,
-                LastKnownRotation = rot
+                LastKnownRotation = rot,
+                CharacterVisualJson = TrySerializeLocalCharacterVisualJson()
             };
 
-            Plugin.Log.LogInfo($"[Paramulti] Built MINIMAL character data sync: GUID={guid:X}, Name={msg.FullName}, Model={modelGuid:X}, pos={pos}");
+            Plugin.Log.LogInfo($"[Paramulti] Built MINIMAL character data sync: GUID={guid:X}, Name={msg.FullName}, Model={modelGuid:X}, pos={pos}, visualJsonBytes={msg.CharacterVisualJson?.Length ?? 0}");
             return msg;
         }
 
@@ -1680,10 +1804,11 @@ namespace ParalivesMultiplayer.Session
                 CurrentPostureGuid = 0UL,
                 IsDeadOrTakenAway = false,
                 LastKnownPosition = pos,
-                LastKnownRotation = rot
+                LastKnownRotation = rot,
+                CharacterVisualJson = TrySerializeLocalCharacterVisualJson()
             };
 
-            Plugin.Log.LogInfo($"[Paramulti] Built FALLBACK character data sync: GUID={guid:X}, Name={msg.FullName}, Model={modelGuid:X}, transform={goName}, pos={pos}");
+            Plugin.Log.LogInfo($"[Paramulti] Built FALLBACK character data sync: GUID={guid:X}, Name={msg.FullName}, Model={modelGuid:X}, transform={goName}, pos={pos}, visualJsonBytes={msg.CharacterVisualJson?.Length ?? 0}");
             return msg;
         }
 
@@ -1767,6 +1892,9 @@ namespace ParalivesMultiplayer.Session
 
                             // The clone shares Data/Visual references with the donor (shallow copy).
                             // Do NOT mutate Data here (name, pathfinding, etc.) — it would corrupt the donor.
+
+                            bool visualApplied = TryApplyRemoteVisualToClone(clonedChar, donor, msg.CharacterVisualJson);
+                            Plugin.Log.LogInfo($"[Paramulti] Step2: remote visual applied={visualApplied}, jsonBytes={msg.CharacterVisualJson?.Length ?? 0}");
 
                             injected = InjectIntoAssetManagerAssets(msg.CharacterGuid, clonedChar);
                             Plugin.Log.LogInfo($"[Paramulti] Step2: inject _assets[{msg.CharacterGuid:X}]={injected}");

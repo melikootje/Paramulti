@@ -23,6 +23,7 @@ namespace ParalivesMultiplayer.Networking.Messages
         public bool IsDeadOrTakenAway;
         public NetVector3 LastKnownPosition;
         public NetQuaternion LastKnownRotation;
+        public string CharacterVisualJson;
 
         public override void Encode(BinaryWriter output)
         {
@@ -38,6 +39,7 @@ namespace ParalivesMultiplayer.Networking.Messages
             output.Write(IsDeadOrTakenAway);
             output.Write(LastKnownPosition);
             output.Write(LastKnownRotation);
+            output.Write(CharacterVisualJson ?? "");
         }
 
         public override bool TryDecode(BinaryReader input, out MessageBase message)
@@ -55,6 +57,9 @@ namespace ParalivesMultiplayer.Networking.Messages
             msg.IsDeadOrTakenAway = input.ReadBoolean();
             msg.LastKnownPosition = input.ReadNetVector3();
             msg.LastKnownRotation = input.ReadNetQuaternion();
+            msg.CharacterVisualJson = input.BaseStream.Position < input.BaseStream.Length
+                ? input.ReadString()
+                : "";
             message = msg;
             return true;
         }
