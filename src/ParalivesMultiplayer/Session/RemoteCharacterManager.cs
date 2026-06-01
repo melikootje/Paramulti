@@ -492,6 +492,42 @@ namespace ParalivesMultiplayer.Session
             return list[0];
         }
 
+        // Resolve the AssetCharacter the local player is actually controlling.
+        // PlayerManager.GetHybridPlayer(0).Player.GetSelectedCharacterGUID() returns the active sim;
+        // this is the right source for "what should the proxy on remote clients look like."
+        static object TryGetSelectedAssetCharacter()
+        {
+            try
+            {
+                var pm = ParalivesGameApiResolver.PlayerManagerInstance;
+                var getHybrid = ParalivesGameApiResolver.GetHybridPlayerMethod;
+                if (pm == null || getHybrid == null) return null;
+
+                var hybrid = getHybrid.Invoke(pm, new object[] { 0 });
+                if (hybrid == null) return null;
+
+                var playerProp = hybrid.GetType().GetProperty("Player");
+                var player = playerProp?.GetValue(hybrid);
+                if (player == null) return null;
+
+                var method = player.GetType().GetMethod("GetSelectedCharacterGUID",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (method == null) return null;
+                ulong selectedGuid = (ulong)method.Invoke(player, null);
+                if (selectedGuid == 0) return null;
+
+                var getChar = ParalivesGameApiResolver.GetCharacterByGUIDMethod;
+                var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
+                if (getChar == null || charMgr == null) return null;
+                return getChar.Invoke(charMgr, new object[] { selectedGuid });
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] TryGetSelectedAssetCharacter failed: {ex.Message}");
+                return null;
+            }
+        }
+
         // Walk localCharacterTransform → CharacterVisual.CharacterGUID → AssetCharacter.
         // Works even when ExtractTransform comparison fails (camera-follow case).
         static object TryGetLocalAssetCharacter()
@@ -530,6 +566,14 @@ namespace ParalivesMultiplayer.Session
         {
             try
             {
+                // Prefer the actively-controlled sim (Player.GetSelectedCharacterGUID).
+                var selected = TryGetSelectedAssetCharacter();
+                if (selected != null)
+                {
+                    var json = TrySerializeVisualJsonFromCharacter(selected);
+                    if (!string.IsNullOrEmpty(json)) return json;
+                }
+                // Fall back to whatever the camera transform resolved to.
                 var local = TryGetLocalAssetCharacter();
                 if (local == null) return "";
                 return TrySerializeVisualJsonFromCharacter(local);
@@ -1673,6 +1717,50 @@ namespace ParalivesMultiplayer.Session
             }
         }
 
+        // Build a MsgCharacterDataSync from any AssetCharacter (used by both the selected-sim
+        // shortcut and the transform-match path).
+        static ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync BuildCharacterDataSyncFromAssetCharacter(object c)
+        {
+            try
+            {
+                if (c == null) return null;
+                var guid = GetAssetGuid(c);
+                var dataProp = c.GetType().GetProperty("Data");
+                var data = dataProp?.GetValue(c);
+                if (data == null) return null;
+
+                var dataType = data.GetType();
+                var firstNameField = dataType.GetField("FirstName");
+                var fullNameField = dataType.GetField("FullName");
+                var ageField = dataType.GetField("Age");
+                var speciesField = dataType.GetField("CurrentSpeciesGUID");
+                var modelField = dataType.GetField("CurrentCharacterModelGUID");
+                var postureField = dataType.GetField("CurrentPosture");
+                var deadField = dataType.GetField("IsDeadOrTakenAway");
+
+                return new ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync
+                {
+                    PlayerId = MultiplayerSession.LocalPlayerId,
+                    CharacterGuid = guid,
+                    FirstName = firstNameField != null ? (string)firstNameField.GetValue(data) : "Player",
+                    FullName = fullNameField != null ? (string)fullNameField.GetValue(data) : $"Player_{MultiplayerSession.LocalPlayerId}",
+                    Age = ageField != null ? (float)ageField.GetValue(data) : 0f,
+                    SpeciesGuid = speciesField != null ? (ulong)speciesField.GetValue(data) : 0UL,
+                    CharacterModelGuid = modelField != null ? (ulong)modelField.GetValue(data) : 0UL,
+                    CurrentPostureGuid = postureField != null ? (ulong)postureField.GetValue(data) : 0UL,
+                    IsDeadOrTakenAway = deadField != null ? (bool)deadField.GetValue(data) : false,
+                    LastKnownPosition = _localCharacterTransform != null ? _localCharacterTransform.position.FromUnity() : new NetVector3(0f, 0f, 0f),
+                    LastKnownRotation = _localCharacterTransform != null ? _localCharacterTransform.rotation.FromUnity() : new NetQuaternion(0f, 0f, 0f, 1f),
+                    CharacterVisualJson = TrySerializeVisualJsonFromCharacter(c)
+                };
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[Paramulti] BuildCharacterDataSyncFromAssetCharacter failed: {ex.Message}");
+                return null;
+            }
+        }
+
         public static ParalivesMultiplayer.Networking.Messages.MsgCharacterDataSync BuildLocalCharacterDataSync()
         {
             try
@@ -1681,6 +1769,19 @@ namespace ParalivesMultiplayer.Session
                 {
                     Plugin.Log.LogWarning("[Paramulti] BuildLocalCharacterDataSync: CharacterManager instance is null");
                     return null;
+                }
+
+                // Preferred path: ask the game for the actively-selected sim. This is the one the
+                // player is controlling, so its data is what other clients should render.
+                var selected = TryGetSelectedAssetCharacter();
+                if (selected != null)
+                {
+                    var msg = BuildCharacterDataSyncFromAssetCharacter(selected);
+                    if (msg != null)
+                    {
+                        Plugin.Log.LogInfo($"[Paramulti] BuildLocalCharacterDataSync (selected): GUID={msg.CharacterGuid:X}, Name={msg.FullName}, Model={msg.CharacterModelGuid:X}, visualJsonBytes={msg.CharacterVisualJson?.Length ?? 0}");
+                        return msg;
+                    }
                 }
 
                 var charMgr = ParalivesGameApiResolver.CharacterManagerInstance;
