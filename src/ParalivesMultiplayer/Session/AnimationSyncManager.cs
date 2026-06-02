@@ -10,6 +10,7 @@ namespace ParalivesMultiplayer.Session
         static readonly Dictionary<int, Animator> _remoteAnimators = new Dictionary<int, Animator>();
         static readonly object _lock = new object();
         static float _lastSendTime;
+        static bool _animatorLogged;
         const float SendInterval = 0.1f; // 10Hz animation updates
 
         public static bool Enabled { get; set; } = true;
@@ -50,6 +51,20 @@ namespace ParalivesMultiplayer.Session
             {
                 Plugin.Log.LogInfo($"[AnimationSync] Animator on {animator.gameObject.name} is not active/enabled");
                 return;
+            }
+
+            // Log the animator details (throttled, first call only)
+            if (!_animatorLogged)
+            {
+                _animatorLogged = true;
+                var controllerName = animator.runtimeAnimatorController != null ? animator.runtimeAnimatorController.name : "null";
+                var parameters = animator.parameters;
+                var paramStr = "";
+                foreach (var p in parameters)
+                {
+                    paramStr += $"{p.name}({p.type})={animator.GetFloat(p.nameHash):F2}/{animator.GetInteger(p.nameHash)}/{animator.GetBool(p.nameHash)}; ";
+                }
+                Plugin.Log.LogInfo($"[AnimationSync] Animator on {animator.gameObject.name}, controller={controllerName}, layerCount={animator.layerCount}, params=[{paramStr}]");
             }
 
             var currentState = animator.GetCurrentAnimatorStateInfo(0);
