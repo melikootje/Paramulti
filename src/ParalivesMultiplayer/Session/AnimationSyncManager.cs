@@ -61,7 +61,7 @@ namespace ParalivesMultiplayer.Session
             else
                 net.SendToHost(msg);
 
-            Plugin.Log.LogDebug($"[AnimationSync] Sent animation state: hash={msg.AnimatorStateHash}, time={msg.NormalizedTime:F2}, transition={msg.IsInTransition}");
+            Plugin.Log.LogInfo($"[AnimationSync] Sent animation state: hash={msg.AnimatorStateHash}, time={msg.NormalizedTime:F2}, transition={msg.IsInTransition}");
         }
 
         public static void ReceiveAnimationState(MsgAnimationState msg)
@@ -109,7 +109,7 @@ namespace ParalivesMultiplayer.Session
 
                 animator.speed = msg.Speed;
 
-                Plugin.Log.LogDebug($"[AnimationSync] Applied animation to remote player {msg.PlayerId}: hash={msg.AnimatorStateHash}, time={msg.NormalizedTime:F2}");
+                Plugin.Log.LogInfo($"[AnimationSync] Applied animation to remote player {msg.PlayerId}: hash={msg.AnimatorStateHash}, time={msg.NormalizedTime:F2}");
             }
             catch (System.Exception ex)
             {
