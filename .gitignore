@@ -22,3 +22,6 @@ reference-mods/*/*.exe
 # OS files
 .DS_Store
 Thumbs.db
+
+# User home directory accidentally added
+~/

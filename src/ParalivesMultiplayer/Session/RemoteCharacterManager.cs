@@ -435,6 +435,25 @@ namespace ParalivesMultiplayer.Session
             catch { return false; }
         }
 
+        // Set any public field on an asset (IsInHousehold, IsVisibleInWorld, DoNotLoadVisual, etc).
+        // Walks the base-type chain so we can hit private fields too if needed.
+        static bool SetAssetField(object asset, string name, object value)
+        {
+            if (asset == null) return false;
+            var t = asset.GetType();
+            while (t != null)
+            {
+                var f = t.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (f != null)
+                {
+                    try { f.SetValue(asset, value); return true; }
+                    catch { return false; }
+                }
+                t = t.BaseType;
+            }
+            return false;
+        }
+
         // LoadCharacterVisual only works for GUIDs present in AssetManager._assets. Inject our clone.
         static bool InjectIntoAssetManagerAssets(ulong guid, object asset)
         {
@@ -1396,12 +1415,20 @@ namespace ParalivesMultiplayer.Session
                         entry.ControlledTransform.position = position;
                         entry.ControlledTransform.rotation = rotation;
 
-                        // Mirror into character data so the game knows where it is
+                        // Mirror into character data so the game knows where it is.
+                        // The game's UpdateCharacterPositionRotationAndVisibility reads from
+                        // data.Position and writes visual.transform.localPosition every frame,
+                        // so we must keep data.Position in sync.
                         var dataProp = entry.GameNativeCharacter.GetType().GetProperty("Data");
                         var data = dataProp?.GetValue(entry.GameNativeCharacter);
                         if (data != null)
                         {
-                            var lastPosField = data.GetType().GetField("LastPositionUsedForZoneObject");
+                            var dataType = data.GetType();
+                            var posField = dataType.GetField("Position", BindingFlags.Public | BindingFlags.Instance);
+                            posField?.SetValue(data, position);
+                            var rotField = dataType.GetField("Rotation", BindingFlags.Public | BindingFlags.Instance);
+                            rotField?.SetValue(data, rotation);
+                            var lastPosField = dataType.GetField("LastPositionUsedForZoneObject");
                             lastPosField?.SetValue(data, position);
                         }
                         return;
@@ -2148,6 +2175,14 @@ namespace ParalivesMultiplayer.Session
                             if (injected)
                             {
                                 ParalivesGameApiResolver.RegisterCharacterMethod?.Invoke(charMgr, new object[] { clonedChar });
+
+                                // Mark the clone as a household member so UpdateCharacterVisualLoaded keeps
+                                // its visual loaded. Without this, the visual is treated as an NPC and may
+                                // be unloaded based on camera distance.
+                                SetAssetField(clonedChar, "IsInHousehold", true);
+                                SetAssetField(clonedChar, "IsVisibleInWorld", true);
+                                SetAssetField(clonedChar, "DoNotLoadVisual", false);
+                                Plugin.Log.LogInfo($"[Paramulti] Step2: marked IsInHousehold=true, IsVisibleInWorld=true");
 
                                 var visual = ParalivesGameApiResolver.LoadCharacterVisualMethod.Invoke(
                                     charMgr, new object[] { proxyGuid });
