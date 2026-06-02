@@ -1403,6 +1403,15 @@ namespace ParalivesMultiplayer.Session
                 if (!_remoteCharacters.TryGetValue(playerId, out var entry)) return;
                 if (entry.ControlledTransform == null) return;
 
+                // Reject void/character-creator positions. The sender might be in the character creator
+                // and broadcast a transform from the void; we should not teleport the proxy there.
+                // Keep the last known valid position instead.
+                if (!IsValidWorldPosition(position))
+                {
+                    Plugin.Log.LogInfo($"[Paramulti][Sync] Rejecting void position for Player {playerId}: {position} (keeping last known)");
+                    return;
+                }
+
                 entry.LastKnownPosition = position;
                 entry.LastKnownRotation = rotation;
 
