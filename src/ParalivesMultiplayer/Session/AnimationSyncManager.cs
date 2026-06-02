@@ -1,4 +1,7 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using ParalivesMultiplayer.Networking;
 using ParalivesMultiplayer.Networking.Messages;
 using UnityEngine;
@@ -7,7 +10,7 @@ namespace ParalivesMultiplayer.Session
 {
     public static class AnimationSyncManager
     {
-        static readonly Dictionary<int, Animator> _remoteAnimators = new Dictionary<int, Animator>();
+        static readonly Dictionary<int, object> _remoteAnimators = new Dictionary<int, object>();
         static readonly object _lock = new object();
         static float _lastSendTime;
         static bool _animatorLogged;
@@ -32,53 +35,84 @@ namespace ParalivesMultiplayer.Session
             CaptureAndSendLocalAnimation();
         }
 
+        // Find the CharacterAnimator custom component on a transform.
+        static object FindCharacterAnimator(Transform root)
+        {
+            if (root == null) return null;
+            foreach (var comp in root.GetComponentsInChildren<Component>(true))
+            {
+                if (comp == null) continue;
+                if (comp.GetType().Name == "CharacterAnimator") return comp;
+            }
+            return null;
+        }
+
+        // Read the first currently playing animation from a CharacterAnimator.
+        static ulong GetCurrentAnimationGuid(object characterAnimator, out float normalizedTime, out float speed, out float weight)
+        {
+            normalizedTime = 0f;
+            speed = 1f;
+            weight = 1f;
+            if (characterAnimator == null) return 0UL;
+            try
+            {
+                var t = characterAnimator.GetType();
+                var guidProp = t.GetProperty("CurrentlyPlayingAnimationGUID", BindingFlags.Public | BindingFlags.Instance);
+                if (guidProp == null) return 0UL;
+                ulong guid = (ulong)guidProp.GetValue(characterAnimator);
+                if (guid == 0UL) return 0UL;
+
+                var containersField = t.GetField("CurrentlyPlayingAnimationContainers",
+                    BindingFlags.Public | BindingFlags.Instance);
+                var containers = containersField?.GetValue(characterAnimator) as IList;
+                if (containers != null && containers.Count > 0)
+                {
+                    var firstContainer = containers[0];
+                    if (firstContainer != null)
+                    {
+                        var stateProp = firstContainer.GetType().GetProperty("CurrentAnimancerState",
+                            BindingFlags.Public | BindingFlags.Instance);
+                        var state = stateProp?.GetValue(firstContainer);
+                        if (state != null)
+                        {
+                            var st = state.GetType();
+                            var ntProp = st.GetProperty("NormalizedTime", BindingFlags.Public | BindingFlags.Instance);
+                            if (ntProp != null) normalizedTime = (float)ntProp.GetValue(state);
+                            var speedProp = st.GetProperty("Speed", BindingFlags.Public | BindingFlags.Instance);
+                            if (speedProp != null) speed = (float)speedProp.GetValue(state);
+                            var wProp = st.GetProperty("EffectiveWeight", BindingFlags.Public | BindingFlags.Instance);
+                            if (wProp != null) weight = (float)wProp.GetValue(state);
+                        }
+                    }
+                }
+                return guid;
+            }
+            catch
+            {
+                return 0UL;
+            }
+        }
+
         static void CaptureAndSendLocalAnimation()
         {
             var localTransform = RemoteCharacterManager.LocalCharacterTransform;
-            if (localTransform == null)
-            {
-                Plugin.Log.LogInfo("[AnimationSync] LocalCharacterTransform is null, skipping");
-                return;
-            }
+            if (localTransform == null) return;
 
-            var animator = localTransform.GetComponentInChildren<Animator>(true);
-            if (animator == null)
-            {
-                Plugin.Log.LogInfo($"[AnimationSync] No Animator found on {localTransform.gameObject.name} (children={localTransform.childCount})");
-                return;
-            }
-            if (!animator.isActiveAndEnabled)
-            {
-                Plugin.Log.LogInfo($"[AnimationSync] Animator on {animator.gameObject.name} is not active/enabled");
-                return;
-            }
+            var characterAnimator = FindCharacterAnimator(localTransform);
+            if (characterAnimator == null) return;
 
-            // Log the animator details (throttled, first call only)
-            if (!_animatorLogged)
-            {
-                _animatorLogged = true;
-                var controllerName = animator.runtimeAnimatorController != null ? animator.runtimeAnimatorController.name : "null";
-                var parameters = animator.parameters;
-                var paramStr = "";
-                foreach (var p in parameters)
-                {
-                    paramStr += $"{p.name}({p.type})={animator.GetFloat(p.nameHash):F2}/{animator.GetInteger(p.nameHash)}/{animator.GetBool(p.nameHash)}; ";
-                }
-                Plugin.Log.LogInfo($"[AnimationSync] Animator on {animator.gameObject.name}, controller={controllerName}, layerCount={animator.layerCount}, params=[{paramStr}]");
-            }
-
-            var currentState = animator.GetCurrentAnimatorStateInfo(0);
-            var transition = animator.IsInTransition(0);
+            ulong guid = GetCurrentAnimationGuid(characterAnimator, out float nt, out float speed, out float weight);
+            if (guid == 0UL) return;
 
             var msg = new MsgAnimationState
             {
                 Tick = MultiplayerSession.Tick,
                 PlayerId = MultiplayerSession.LocalPlayerId,
-                AnimatorStateHash = currentState.shortNameHash,
-                NormalizedTime = currentState.normalizedTime,
-                Speed = currentState.speed,
-                IsInTransition = transition,
-                TransitionDestinationStateHash = transition ? animator.GetNextAnimatorStateInfo(0).shortNameHash : 0
+                AnimatorStateHash = (int)guid,
+                TransitionDestinationStateHash = (int)(guid >> 32),
+                NormalizedTime = nt,
+                Speed = speed,
+                IsInTransition = false
             };
 
             var net = TcpNetworkManager.Instance;
@@ -88,8 +122,6 @@ namespace ParalivesMultiplayer.Session
                 net.SendToAllClients(msg);
             else
                 net.SendToHost(msg);
-
-            Plugin.Log.LogInfo($"[AnimationSync] Sent animation state: hash={msg.AnimatorStateHash}, time={msg.NormalizedTime:F2}, transition={msg.IsInTransition}");
         }
 
         public static void ReceiveAnimationState(MsgAnimationState msg)
@@ -98,60 +130,48 @@ namespace ParalivesMultiplayer.Session
 
             lock (_lock)
             {
-                if (!_remoteAnimators.TryGetValue(msg.PlayerId, out var animator))
+                if (!_remoteAnimators.TryGetValue(msg.PlayerId, out var characterAnimator))
                 {
-                    animator = FindRemoteAnimator(msg.PlayerId);
-                    if (animator != null)
-                        _remoteAnimators[msg.PlayerId] = animator;
+                    var entry = RemoteCharacterManager.GetRemoteCharacterEntry(msg.PlayerId);
+                    if (entry == null || entry.ControlledTransform == null) return;
+                    characterAnimator = FindCharacterAnimator(entry.ControlledTransform);
+                    if (characterAnimator != null)
+                        _remoteAnimators[msg.PlayerId] = characterAnimator;
                 }
 
-                if (animator != null && animator.isActiveAndEnabled)
-                {
-                    ApplyAnimationState(animator, msg);
-                }
+                if (characterAnimator != null)
+                    ApplyAnimationState(characterAnimator, msg);
             }
         }
 
-        static Animator FindRemoteAnimator(int playerId)
-        {
-            var entry = RemoteCharacterManager.GetRemoteCharacterEntry(playerId);
-            if (entry == null || entry.ControlledTransform == null) return null;
-
-            return entry.ControlledTransform.GetComponentInChildren<Animator>(true);
-        }
-
-        static void ApplyAnimationState(Animator animator, MsgAnimationState msg)
+        static void ApplyAnimationState(object characterAnimator, MsgAnimationState msg)
         {
             try
             {
-                if (msg.IsInTransition)
-                {
-                    // Cross-fade to destination state
-                    animator.CrossFade(msg.TransitionDestinationStateHash, 0.1f, 0, msg.NormalizedTime);
-                }
-                else
-                {
-                    // Play state directly
-                    animator.Play(msg.AnimatorStateHash, 0, msg.NormalizedTime);
-                }
+                ulong guid = ((ulong)(uint)msg.AnimatorStateHash) |
+                             (((ulong)(uint)msg.TransitionDestinationStateHash) << 32);
+                if (guid == 0UL) return;
 
-                animator.speed = msg.Speed;
+                var t = characterAnimator.GetType();
+                var playMethod = t.GetMethod("PlayAnimation",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (playMethod == null) return;
 
-                Plugin.Log.LogInfo($"[AnimationSync] Applied animation to remote player {msg.PlayerId}: hash={msg.AnimatorStateHash}, time={msg.NormalizedTime:F2}");
+                // PlayAnimation(animationAssetGUID, containerData=null, fadeDuration=0.1f, playSpeed=msg.Speed)
+                playMethod.Invoke(characterAnimator, new object[] { guid, null, 0.1f, msg.Speed });
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 Plugin.Log.LogWarning($"[AnimationSync] Failed to apply animation to player {msg.PlayerId}: {ex.Message}");
             }
         }
 
-        public static void RegisterRemoteAnimator(int playerId, Animator animator)
+        public static void RegisterRemoteAnimator(int playerId, object characterAnimator)
         {
             lock (_lock)
             {
-                _remoteAnimators[playerId] = animator;
+                _remoteAnimators[playerId] = characterAnimator;
             }
-            Plugin.Log.LogInfo($"[AnimationSync] Registered animator for player {playerId}");
         }
 
         public static void UnregisterRemoteAnimator(int playerId)
@@ -160,7 +180,6 @@ namespace ParalivesMultiplayer.Session
             {
                 _remoteAnimators.Remove(playerId);
             }
-            Plugin.Log.LogInfo($"[AnimationSync] Unregistered animator for player {playerId}");
         }
 
         public static void ClearAll()
@@ -169,7 +188,6 @@ namespace ParalivesMultiplayer.Session
             {
                 _remoteAnimators.Clear();
             }
-            Plugin.Log.LogInfo("[AnimationSync] Cleared all remote animators");
         }
     }
 }
