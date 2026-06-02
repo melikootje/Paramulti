@@ -1472,7 +1472,9 @@ namespace ParalivesMultiplayer.Session
                             entry.ControlledTransform.rotation = rotation;
 
                             // DIAG: log the math so we can verify
-                            Plugin.Log.LogInfo($"[Paramulti][Sync] Player {playerId} ApplyRemoteState math: parentOffset={parentOffset}, num4={num4}, localPos={localPos}, target={position}, actualWorld={entry.ControlledTransform.position}");
+                            var cubePos = entry.FallbackProxy != null ? entry.FallbackProxy.transform.position : Vector3.zero;
+                            var cubeLocal = entry.FallbackProxy != null ? entry.FallbackProxy.transform.localPosition : Vector3.zero;
+                            Plugin.Log.LogInfo($"[Paramulti][Sync] Player {playerId} ApplyRemoteState math: parentOffset={parentOffset}, num4={num4}, localPos={localPos}, target={position}, actualWorld={entry.ControlledTransform.position}, cubeWorld={cubePos}, cubeLocal={cubeLocal}");
                         }
                         return;
                     }
