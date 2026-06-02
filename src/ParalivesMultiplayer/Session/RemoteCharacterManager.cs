@@ -1472,7 +1472,7 @@ namespace ParalivesMultiplayer.Session
                             entry.ControlledTransform.rotation = rotation;
 
                             // DIAG: log the math so we can verify
-                            Plugin.Log.LogInfo($"[Paramulti][Sync] Player {playerId} ApplyRemoteState math: parentOffset={parentOffset}, num4={num4}, localPos={localPos}, target={position}");
+                            Plugin.Log.LogInfo($"[Paramulti][Sync] Player {playerId} ApplyRemoteState math: parentOffset={parentOffset}, num4={num4}, localPos={localPos}, target={position}, actualWorld={entry.ControlledTransform.position}");
                         }
                         return;
                     }
