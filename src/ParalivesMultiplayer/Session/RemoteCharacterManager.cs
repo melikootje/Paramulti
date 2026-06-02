@@ -1421,24 +1421,55 @@ namespace ParalivesMultiplayer.Session
                 {
                     if (entry.IsGameNative && entry.GameNativeCharacter != null)
                     {
-                        entry.ControlledTransform.position = position;
-                        entry.ControlledTransform.rotation = rotation;
+                        // The visual is parented to CharacterManager. The game sets
+                        //   visual.localPosition = data.Position + (0, num4, 0)
+                        // every frame, where num4 = Visual.Data.CharacterYOffset * RigRootScale.
+                        // For the visual's WORLD position to equal the desired position:
+                        //   CharacterManager.position + data.Position + (0, num4, 0) = position
+                        //   data.Position = position - CharacterManager.position - (0, num4, 0)
+                        var parent = entry.ControlledTransform.parent;
+                        Vector3 parentOffset = parent != null ? parent.position : Vector3.zero;
 
-                        // Mirror into character data so the game knows where it is.
-                        // The game's UpdateCharacterPositionRotationAndVisibility reads from
-                        // data.Position and writes visual.transform.localPosition every frame,
-                        // so we must keep data.Position in sync.
+                        // Read num4 = CharacterYOffset * RigRootScale
+                        float num4 = 0f;
                         var dataProp = entry.GameNativeCharacter.GetType().GetProperty("Data");
                         var data = dataProp?.GetValue(entry.GameNativeCharacter);
                         if (data != null)
                         {
+                            var visualProp = entry.GameNativeCharacter.GetType().GetProperty("Visual");
+                            var visual = visualProp?.GetValue(entry.GameNativeCharacter);
+                            if (visual != null)
+                            {
+                                var visualDataProp = visual.GetType().GetProperty("Data");
+                                var visualData = visualDataProp?.GetValue(visual);
+                                if (visualData != null)
+                                {
+                                    var yOffsetField = visualData.GetType().GetProperty("CharacterYOffset");
+                                    if (yOffsetField != null) num4 = (float)yOffsetField.GetValue(visualData);
+                                }
+                            }
+                            // Multiply by RigRootScale (read live from the visual transform)
+                            var rigRootProp = entry.ControlledTransform.GetType().GetProperty("RigRootScale");
+                            if (rigRootProp != null) num4 *= (float)rigRootProp.GetValue(entry.ControlledTransform);
+                        }
+
+                        // Compute localPos such that the visual's world position equals `position`
+                        Vector3 localPos = position - parentOffset - new Vector3(0f, num4, 0f);
+
+                        if (data != null)
+                        {
                             var dataType = data.GetType();
                             var posField = dataType.GetField("Position", BindingFlags.Public | BindingFlags.Instance);
-                            posField?.SetValue(data, position);
+                            posField?.SetValue(data, localPos);
                             var rotField = dataType.GetField("Rotation", BindingFlags.Public | BindingFlags.Instance);
                             rotField?.SetValue(data, rotation);
                             var lastPosField = dataType.GetField("LastPositionUsedForZoneObject");
-                            lastPosField?.SetValue(data, position);
+                            lastPosField?.SetValue(data, localPos);
+
+                            // Also set the visual's world position directly so the change is
+                            // immediately visible (the game's update only runs every frame).
+                            entry.ControlledTransform.position = position;
+                            entry.ControlledTransform.rotation = rotation;
                         }
                         return;
                     }
