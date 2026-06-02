@@ -96,10 +96,26 @@ namespace ParalivesMultiplayer.Session
         static void CaptureAndSendLocalAnimation()
         {
             var localTransform = RemoteCharacterManager.LocalCharacterTransform;
-            if (localTransform == null) return;
+            if (localTransform == null)
+            {
+                if (!_animatorLogged) Plugin.Log.LogInfo("[AnimationSync] LocalCharacterTransform is null, skipping");
+                return;
+            }
 
             var characterAnimator = FindCharacterAnimator(localTransform);
-            if (characterAnimator == null) return;
+            if (characterAnimator == null)
+            {
+                if (!_animatorLogged)
+                {
+                    _animatorLogged = true;
+                    Plugin.Log.LogInfo($"[AnimationSync] No CharacterAnimator found on {localTransform.gameObject.name}, childCount={localTransform.childCount}");
+                    var components = localTransform.GetComponentsInChildren<Component>(true);
+                    var compNames = new System.Collections.Generic.HashSet<string>();
+                    foreach (var c in components) { if (c != null) compNames.Add(c.GetType().Name); }
+                    Plugin.Log.LogInfo($"[AnimationSync] Component types found: {string.Join(",", compNames)}");
+                }
+                return;
+            }
 
             ulong guid = GetCurrentAnimationGuid(characterAnimator, out float nt, out float speed, out float weight);
             if (guid == 0UL) return;
