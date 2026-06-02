@@ -2200,14 +2200,31 @@ namespace ParalivesMultiplayer.Session
                                 if (visual != null)
                                 {
                                     var visualTransform = ExtractTransform(visual);
-                                    if (visualTransform != null && entry.ControlledTransform != null)
+                                    if (visualTransform != null)
                                     {
-                                        visualTransform.SetParent(entry.ControlledTransform, false);
-                                        visualTransform.localPosition = Vector3.zero;
-                                        visualTransform.localRotation = Quaternion.identity;
                                         StripInputComponents(visualTransform);
+
+                                        // CRITICAL: Do NOT reparent the visual to our proxy. The game's
+                                        // UpdateCharacterPositionRotationAndVisibility sets
+                                        //   characterVisual.transform.localPosition = data.Position + num4
+                                        // every frame, where num4 is the rig Y offset. If we reparent
+                                        // to the proxy (also at world position P), the visual ends up at
+                                        // P + data.Position + num4 instead of data.Position + num4.
+                                        // Keep the visual parented to CharacterManager (where the game
+                                        // put it) and use the visual itself as the controlled transform.
+                                        entry.ControlledTransform = visualTransform;
                                         entry.GameNativeCharacter = clonedChar;
                                         entry.IsGameNative = true;
+
+                                        // Parent the fallback cube to the visual so the debug light/sphere
+                                        // follow the character as it moves through the world.
+                                        if (entry.FallbackProxy != null)
+                                        {
+                                            entry.FallbackProxy.transform.SetParent(visualTransform, false);
+                                            entry.FallbackProxy.transform.localPosition = Vector3.zero;
+                                            entry.FallbackProxy.transform.localRotation = Quaternion.identity;
+                                        }
+
                                         Plugin.Log.LogInfo($"[Paramulti] Game-native visual attached for player {msg.PlayerId} ({visualTransform.gameObject.name})");
                                     }
                                 }
