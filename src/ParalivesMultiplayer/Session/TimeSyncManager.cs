@@ -22,6 +22,8 @@ namespace ParalivesMultiplayer.Session
         static bool _resolved;
         static bool _resolutionLogged;
         static float _lastBroadcast;
+        static int _broadcastCount;
+        static int _applyCount;
 
         static void Resolve()
         {
@@ -70,7 +72,9 @@ namespace ParalivesMultiplayer.Session
                 };
                 var net = Networking.TcpNetworkManager.Instance;
                 net?.SendToAllClients(msg);
-                Plugin.Log.LogDebug($"[TimeSync] broadcast min={msg.TotalMinutes:0.00}, speed={msg.TimeSpeedIndex}, pauseP={msg.IsPausedByPlayer}, pauseUI={msg.IsPausedByUI}");
+                _broadcastCount++;
+                if (_broadcastCount <= 3 || _broadcastCount % 30 == 0)
+                    Plugin.Log.LogInfo($"[TimeSync] broadcast #{_broadcastCount} min={msg.TotalMinutes:0.00}, speed={msg.TimeSpeedIndex}, pauseP={msg.IsPausedByPlayer}, pauseUI={msg.IsPausedByUI}");
             }
             catch (Exception ex)
             {
@@ -92,7 +96,9 @@ namespace ParalivesMultiplayer.Session
                 _timeSpeedIndexProp?.SetValue(null, msg.TimeSpeedIndex);
                 _isPausedByPlayerProp?.SetValue(null, msg.IsPausedByPlayer);
                 _isPausedByUIProp?.SetValue(null, msg.IsPausedByUI);
-                Plugin.Log.LogDebug($"[TimeSync] applied min={msg.TotalMinutes:0.00}, speed={msg.TimeSpeedIndex}, pauseP={msg.IsPausedByPlayer}, pauseUI={msg.IsPausedByUI}");
+                _applyCount++;
+                if (_applyCount <= 3 || _applyCount % 30 == 0)
+                    Plugin.Log.LogInfo($"[TimeSync] applied #{_applyCount} min={msg.TotalMinutes:0.00}, speed={msg.TimeSpeedIndex}, pauseP={msg.IsPausedByPlayer}, pauseUI={msg.IsPausedByUI}");
             }
             catch (Exception ex)
             {
