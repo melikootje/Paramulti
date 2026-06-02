@@ -1470,6 +1470,9 @@ namespace ParalivesMultiplayer.Session
                             // immediately visible (the game's update only runs every frame).
                             entry.ControlledTransform.position = position;
                             entry.ControlledTransform.rotation = rotation;
+
+                            // DIAG: log the math so we can verify
+                            Plugin.Log.LogInfo($"[Paramulti][Sync] Player {playerId} ApplyRemoteState math: parentOffset={parentOffset}, num4={num4}, localPos={localPos}, target={position}");
                         }
                         return;
                     }
