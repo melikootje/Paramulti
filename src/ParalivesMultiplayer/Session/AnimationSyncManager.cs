@@ -21,7 +21,8 @@ namespace ParalivesMultiplayer.Session
 
         public static void Update()
         {
-            if (!Enabled || !MultiplayerSession.IsActive) return;
+            if (!Enabled) return;
+            if (!MultiplayerSession.IsActive) return;
 
             var now = Time.time;
             if (now - _lastSendTime < SendInterval) return;
@@ -33,11 +34,23 @@ namespace ParalivesMultiplayer.Session
         static void CaptureAndSendLocalAnimation()
         {
             var localTransform = RemoteCharacterManager.LocalCharacterTransform;
-            if (localTransform == null) return;
+            if (localTransform == null)
+            {
+                Plugin.Log.LogInfo("[AnimationSync] LocalCharacterTransform is null, skipping");
+                return;
+            }
 
             var animator = localTransform.GetComponentInChildren<Animator>(true);
-            if (animator == null) return;
-            if (!animator.isActiveAndEnabled) return;
+            if (animator == null)
+            {
+                Plugin.Log.LogInfo($"[AnimationSync] No Animator found on {localTransform.gameObject.name} (children={localTransform.childCount})");
+                return;
+            }
+            if (!animator.isActiveAndEnabled)
+            {
+                Plugin.Log.LogInfo($"[AnimationSync] Animator on {animator.gameObject.name} is not active/enabled");
+                return;
+            }
 
             var currentState = animator.GetCurrentAnimatorStateInfo(0);
             var transition = animator.IsInTransition(0);
