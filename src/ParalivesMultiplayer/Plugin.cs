@@ -28,6 +28,7 @@ namespace ParalivesMultiplayer
         static ConfigEntry<int> _cfgListenPort;
         static ConfigEntry<string> _cfgConnectAddress;
         static ConfigEntry<bool> _cfgEnablePatches;
+        static ConfigEntry<bool> _cfgModEnabled;
         static ConfigEntry<bool> _cfgBuildSyncDryRun;
         static ConfigEntry<bool> _cfgBuildSyncRealApply;
         static ConfigEntry<bool> _cfgEnableLivePlayerSync;
@@ -81,6 +82,8 @@ namespace ParalivesMultiplayer
                     "Default address for clients to connect to.");
                 _cfgEnablePatches = Config.Bind("Harmony", "EnablePatches", true,
                     "Enable Harmony patches for game integration.");
+                _cfgModEnabled = Config.Bind("General", "ModEnabled", true,
+                    "Master switch for the mod. Set to false in BepInEx config to make this plugin a no-op (useful to isolate loading-hang issues — compare to launching with the DLL removed).");
                 _cfgBuildSyncDryRun = Config.Bind("BuildSync", "DryRunMode", false,
                     "Log build events without applying them to game state.");
                 _cfgBuildSyncRealApply = Config.Bind("BuildSync", "RealApplyMode", false,
@@ -124,6 +127,12 @@ namespace ParalivesMultiplayer
                     "Shared secret for message authentication (leave empty to disable).");
                 _cfgMaxMessagesPerSecond = Config.Bind("Security", "MaxMessagesPerSecond", 100,
                     "Maximum messages per second allowed per client.");
+
+                if (!_cfgModEnabled.Value)
+                {
+                    Log.LogInfo($"[{PluginInfo.NAME}] ModEnabled=false — skipping all init, plugin is a no-op. (Master switch to isolate loading-hang issues.)");
+                    return;
+                }
 
                 Log.LogInfo("[Init] Step 1: MessageRegistry");
                 MessageRegistry.LogAction = msg => Log.LogInfo(msg);
@@ -203,6 +212,7 @@ namespace ParalivesMultiplayer
                     {
                         var harmony = new Harmony(PluginInfo.GUID);
                         ApplyPatches(harmony);
+                    ModManagerDiagnostics.Apply(harmony);
                     }
                     catch (Exception ex)
                     {
@@ -228,6 +238,7 @@ namespace ParalivesMultiplayer
 
         private void Update()
         {
+            if (_cfgModEnabled != null && !_cfgModEnabled.Value) return;
             try
             {
                 OnGameUpdate();
