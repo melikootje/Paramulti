@@ -95,22 +95,20 @@ namespace ParalivesMultiplayer.Patches
 
         static bool Refresh_Prefix(object[] __args)
         {
-            // Throttle logging: only log every ~2s to avoid filling the diag file with
-            // thousands of lines when the game is in a tight retry loop.
+            // Throttle logging: only log every ~2s.
             DateTime now = DateTime.Now;
             if ((now - _lastLog).TotalSeconds >= 2.0)
             {
                 _lastLog = now;
-                File.AppendAllText(DIAGFILE, $"[{now:O}] Refresh_Prefix called (true prefix) — return FALSE to break the boot-loop and free the main thread for Steam callbacks\n");
+                File.AppendAllText(DIAGFILE, $"[{now:O}] Refresh_Prefix called (true prefix) — return TRUE; letting the 6ix finalizer handle any exception\n");
             }
-            // SKIP the original method. The game's ModManager.RefreshCurrentlyLoadedMods
-            // throws ReflectionTypeLoadException (6ix catches it) or hangs in a tight
-            // retry loop while waiting for SteamworksService.CompletedInitialLaunchDownloads.
-            // The 6ix SteamOfflineFix postfix only sets that flag when Steam is offline;
-            // if Steam is online, Steam itself has to set it, but the main thread is
-            // stuck in this loop so Steam callbacks never run. Skipping the original
-            // method lets the main thread free up so Steam callbacks fire.
-            return false;
+            // LET THE ORIGINAL METHOD RUN. The 6ix StopReimporting finalizer catches
+            // any ReflectionTypeLoadException; the 6ix SteamOfflineFix postfix sets
+            // CompletedInitialLaunchDownloads=true on SteamworksService.Update (which
+            // needs the main thread free, which only happens if we don't busy-loop).
+            // Returning false here short-circuits whatever the game was waiting for
+            // and leaves the boot scene hanging.
+            return true;
         }
 
         static DateTime _lastLog = DateTime.MinValue;
