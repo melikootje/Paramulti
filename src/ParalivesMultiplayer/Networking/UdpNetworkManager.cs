@@ -272,6 +272,17 @@ namespace ParalivesMultiplayer.Networking
                 _serverPeer = peer;
                 Log("[Net] Connected to server");
                 OnStatusChanged?.Invoke("Connected");
+
+                // Announce ourselves to the host — mirrors TcpNetworkManager post-connect
+                var connectMsg = new MsgConnect { ClientName = "LocalClient" };
+                SendToHost(connectMsg);
+
+                var joinMsg = new MsgPlayerJoin
+                {
+                    PlayerId = MultiplayerSession.LocalPlayerId,
+                    PlayerName = $"Client_{MultiplayerSession.LocalPlayerId}"
+                };
+                SendToHost(joinMsg);
             }
         }
 
