@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Reflection;
 using HarmonyLib;
 using ParalivesMultiplayer.Session;
@@ -8,11 +9,14 @@ namespace ParalivesMultiplayer.Patches
     static class ModManagerDiagnostics
     {
         const string LOG = "[Paramulti/ModManagerDiag]";
+        const string DIAGFILE = "BepInEx/ModManagerDiag.log";
 
         public static void Apply(Harmony harmony)
         {
             try
             {
+                File.WriteAllText(DIAGFILE, $"[{DateTime.Now:O}] ModManagerDiagnostics.Apply\n");
+
                 Type modManagerType = null;
                 foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                 {
@@ -21,75 +25,78 @@ namespace ParalivesMultiplayer.Patches
                         var t = asm.GetType("ModManager", throwOnError: false);
                         if (t != null) { modManagerType = t; break; }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        File.AppendAllText(DIAGFILE, $"  asm {asm.GetName().Name} GetType failed: {ex.GetType().Name}: {ex.Message}\n");
+                    }
                 }
 
                 if (modManagerType == null)
                 {
-                    Plugin.Log?.LogInfo($"{LOG} ModManager type not found, skipping diagnostic patches.");
+                    File.AppendAllText(DIAGFILE, "ModManager type not found\n");
                     return;
                 }
 
+                // SCAN FIRST: walk all loaded assemblies and find which ones produce
+                // ReflectionTypeLoadException. We do this once at install time and dump
+                // the offending types to the diag file. This is independent of the
+                // game's ModManager call — we get the answer up front.
+                File.AppendAllText(DIAGFILE, $"Scanning {AppDomain.CurrentDomain.GetAssemblies().Length} assemblies for type-load failures...\n");
+                int assembliesWithFailures = 0;
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    Type[] types;
+                    try
+                    {
+                        types = asm.GetTypes();
+                    }
+                    catch (ReflectionTypeLoadException rtle)
+                    {
+                        assembliesWithFailures++;
+                        File.AppendAllText(DIAGFILE, $"\n=== ASSEMBLY WITH FAILURES: {asm.GetName().Name} ({asm.GetName().Version}) ===\n");
+                        File.AppendAllText(DIAGFILE, $"  loaded types = {rtle.Types?.Length ?? -1}\n");
+                        int n = 0;
+                        foreach (var le in rtle.LoaderExceptions)
+                        {
+                            n++;
+                            if (le == null) continue;
+                            File.AppendAllText(DIAGFILE, $"  LoaderEx[{n}] {le.GetType().Name}: {le.Message}\n");
+                            try
+                            {
+                                var tn = ExtractTypeName(le.Message);
+                                if (tn != null) File.AppendAllText(DIAGFILE, $"      -> suspect type: {tn}\n");
+                            }
+                            catch { }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        File.AppendAllText(DIAGFILE, $"  asm {asm.GetName().Name} GetTypes() threw non-RTLE: {ex.GetType().Name}: {ex.Message}\n");
+                    }
+                }
+                File.AppendAllText(DIAGFILE, $"\n=== Summary: {assembliesWithFailures} assemblies produced ReflectionTypeLoadException ===\n");
+
+                // Now also install a true PREFIX (bool return) that fires before the
+                // game's call. We don't try to catch the exception there (6ix does),
+                // we just confirm the call site is reached.
                 var refresh = modManagerType.GetMethod("RefreshCurrentlyLoadedMods", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (refresh != null)
                 {
-                    var finalizer = typeof(ModManagerDiagnostics).GetMethod(nameof(Refresh_Finalizer), BindingFlags.Static | BindingFlags.NonPublic);
-                    harmony.Patch(refresh, finalizer: new HarmonyMethod(finalizer));
-                    Plugin.Log?.LogInfo($"{LOG} finalizer installed on ModManager.RefreshCurrentlyLoadedMods");
-                }
-
-                var loadAll = modManagerType.GetMethod("LoadAllMods", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (loadAll != null)
-                {
-                    var finalizer = typeof(ModManagerDiagnostics).GetMethod(nameof(LoadAll_Finalizer), BindingFlags.Static | BindingFlags.NonPublic);
-                    harmony.Patch(loadAll, finalizer: new HarmonyMethod(finalizer));
-                    Plugin.Log?.LogInfo($"{LOG} finalizer installed on ModManager.LoadAllMods");
+                    var prefix = typeof(ModManagerDiagnostics).GetMethod(nameof(Refresh_Prefix), BindingFlags.Static | BindingFlags.NonPublic);
+                    harmony.Patch(refresh, prefix: new HarmonyMethod(prefix));
+                    File.AppendAllText(DIAGFILE, $"Patched RefreshCurrentlyLoadedMods with true prefix\n");
                 }
             }
             catch (Exception ex)
             {
-                Plugin.Log?.LogError($"{LOG} failed: {ex.Message}");
+                File.AppendAllText(DIAGFILE, $"Apply failed: {ex}\n");
             }
         }
 
-        static Exception Refresh_Finalizer(Exception __exception)
+        static bool Refresh_Prefix(object[] __args)
         {
-            if (__exception == null) return null;
-            LogInnerExceptions("RefreshCurrentlyLoadedMods", __exception);
-            return null;
-        }
-
-        static Exception LoadAll_Finalizer(Exception __exception)
-        {
-            if (__exception == null) return null;
-            LogInnerExceptions("LoadAllMods", __exception);
-            return null;
-        }
-
-        static void LogInnerExceptions(string method, Exception ex)
-        {
-            Plugin.Log?.LogError($"{LOG} {method} threw: {ex.GetType().Name}: {ex.Message}");
-            if (ex is ReflectionTypeLoadException rtle)
-            {
-                int n = 0;
-                foreach (var le in rtle.LoaderExceptions)
-                {
-                    n++;
-                    if (le == null) continue;
-                    Plugin.Log?.LogError($"{LOG}   [{n}] {le.GetType().Name}: {le.Message}");
-                    // Try to identify the assembly that owns the failing type
-                    try
-                    {
-                        var typeName = ExtractTypeName(le.Message);
-                        if (typeName != null)
-                        {
-                            Plugin.Log?.LogError($"{LOG}     -> suspect type: {typeName}");
-                        }
-                    }
-                    catch { }
-                }
-                Plugin.Log?.LogError($"{LOG}   loaded types count = {rtle.Types?.Length ?? -1}");
-            }
+            File.AppendAllText(DIAGFILE, $"[{DateTime.Now:O}] Refresh_Prefix called (true prefix)\n");
+            return true; // let original run
         }
 
         static string ExtractTypeName(string message)
