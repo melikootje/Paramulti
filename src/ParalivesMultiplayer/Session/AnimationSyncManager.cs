@@ -11,10 +11,14 @@ namespace ParalivesMultiplayer.Session
     public static class AnimationSyncManager
     {
         static readonly Dictionary<int, object> _remoteAnimators = new Dictionary<int, object>();
+        // Track the last applied animation GUID per player so we only CrossFade on state changes
+        // (not every packet) — this avoids jitter and snap-back.
+        static readonly Dictionary<int, ulong> _lastAppliedGuid = new Dictionary<int, ulong>();
         static readonly object _lock = new object();
         static float _lastSendTime;
         static bool _animatorLogged;
         const float SendInterval = 0.1f; // 10Hz animation updates
+        const float CrossFadeDuration = 0.12f; // smooth transition between animation states
 
         public static bool Enabled { get; set; } = true;
 
@@ -138,6 +142,8 @@ namespace ParalivesMultiplayer.Session
                 net.SendToAllClients(msg);
             else
                 net.SendToHost(msg);
+
+            Plugin.Log.LogInfo($"[AnimSync][Send] player={msg.PlayerId} guid={guid:X} nt={nt:F2} speed={speed:F2} weight={weight:F2}");
         }
 
         public static void ReceiveAnimationState(MsgAnimationState msg)
@@ -173,12 +179,64 @@ namespace ParalivesMultiplayer.Session
                     BindingFlags.Public | BindingFlags.Instance);
                 if (playMethod == null) return;
 
-                // PlayAnimation(animationAssetGUID, containerData=null, fadeDuration=0.1f, playSpeed=msg.Speed)
-                playMethod.Invoke(characterAnimator, new object[] { guid, null, 0.1f, msg.Speed });
+                // Latency compensation: estimate delay in seconds from message tick vs local tick.
+                int localTick = unchecked((int)MultiplayerSession.Tick);
+                int delayTicks = localTick - unchecked((int)msg.Tick);
+                float delaySeconds = delayTicks / 30f; // assume ~30Hz effective tick
+                float correctedTime = msg.NormalizedTime + delaySeconds * Mathf.Max(0.01f, msg.Speed);
+                correctedTime = correctedTime - Mathf.Floor(correctedTime); // wrap [0,1)
+
+                // Only CrossFade when the animation GUID actually changes — avoid jitter.
+                ulong lastGuid;
+                bool isNewState = !_lastAppliedGuid.TryGetValue(msg.PlayerId, out lastGuid) || lastGuid != guid;
+
+                if (isNewState)
+                {
+                    _lastAppliedGuid[msg.PlayerId] = guid;
+                    // PlayAnimation(animationAssetGUID, containerData=null, fadeDuration=crossfade, playSpeed=msg.Speed)
+                    playMethod.Invoke(characterAnimator, new object[] { guid, null, CrossFadeDuration, msg.Speed });
+                    Plugin.Log.LogInfo($"[AnimSync][Recv] player={msg.PlayerId} crossfade guid={guid:X} ntRaw={msg.NormalizedTime:F2} ntCorrected={correctedTime:F2} delayTicks={delayTicks} speed={msg.Speed:F2}");
+                }
+
+                // For ongoing state, correct playback time so the remote stays in phase.
+                if (msg.NormalizedTime > 0f)
+                {
+                    TryCorrectAnimancerTime(characterAnimator, correctedTime, msg.Speed);
+                }
             }
             catch (Exception ex)
             {
                 Plugin.Log.LogWarning($"[AnimationSync] Failed to apply animation to player {msg.PlayerId}: {ex.Message}");
+            }
+        }
+
+        // Walk the active containers and set Time + Speed on each AnimancerState to keep
+        // the remote animation in phase with the local.
+        static void TryCorrectAnimancerTime(object characterAnimator, float normalizedTime, float speed)
+        {
+            try
+            {
+                var t = characterAnimator.GetType();
+                var containersField = t.GetField("CurrentlyPlayingAnimationContainers",
+                    BindingFlags.Public | BindingFlags.Instance);
+                var containers = containersField?.GetValue(characterAnimator) as IList;
+                if (containers == null) return;
+                for (int i = 0; i < containers.Count; i++)
+                {
+                    var container = containers[i];
+                    if (container == null) continue;
+                    var stateProp = container.GetType().GetProperty("CurrentAnimancerState",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    var state = stateProp?.GetValue(container);
+                    if (state == null) continue;
+                    var st = state.GetType();
+                    st.GetProperty("Time", BindingFlags.Public | BindingFlags.Instance)?.SetValue(state, normalizedTime);
+                    st.GetProperty("Speed", BindingFlags.Public | BindingFlags.Instance)?.SetValue(state, speed);
+                }
+            }
+            catch
+            {
+                // ignore — Time/Speed may not exist on every state subclass
             }
         }
 
@@ -195,6 +253,7 @@ namespace ParalivesMultiplayer.Session
             lock (_lock)
             {
                 _remoteAnimators.Remove(playerId);
+                _lastAppliedGuid.Remove(playerId);
             }
         }
 
@@ -203,6 +262,7 @@ namespace ParalivesMultiplayer.Session
             lock (_lock)
             {
                 _remoteAnimators.Clear();
+                _lastAppliedGuid.Clear();
             }
         }
     }
