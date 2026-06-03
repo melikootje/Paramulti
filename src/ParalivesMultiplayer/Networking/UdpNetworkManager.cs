@@ -241,6 +241,7 @@ namespace ParalivesMultiplayer.Networking
                         if (item.Peer != null && item.Peer.ConnectionState == ConnectionState.Connected)
                         {
                             item.Peer.Send(item.Data, item.Offset, item.Length, item.Method);
+                            PacketStats.RecordSent(item.Length);
                         }
                     }
                     catch (Exception ex)
@@ -325,10 +326,14 @@ namespace ParalivesMultiplayer.Networking
                 if (length <= 0 || length > 1024 * 1024) return;
                 if (reader.AvailableBytes < length) return;
                 var seg = reader.GetBytesSegment(length);
-                var data = new byte[seg.Count];
-                Buffer.BlockCopy(seg.Array, seg.Offset, data, 0, seg.Count);
+                // Reconstruct the full frame [4:totalLength][payload] that DecodeMessage expects
+                // (reader.GetInt() consumed the 4-byte length prefix, so seg starts at codeLen)
+                var data = new byte[4 + seg.Count];
+                Buffer.BlockCopy(BitConverter.GetBytes(length), 0, data, 0, 4);
+                Buffer.BlockCopy(seg.Array, seg.Offset, data, 4, seg.Count);
                 var msg = DecodeMessage(data, data.Length);
                 if (msg == null) return;
+                PacketStats.RecordReceived(4 + seg.Count);
                 msg.SenderClientId = peer.Id;
                 HandleIncomingMessage(peer, msg);
             }
