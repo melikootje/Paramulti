@@ -82,10 +82,19 @@ namespace ParalivesMultiplayer.Session
                             var st = state.GetType();
                             var ntProp = st.GetProperty("NormalizedTime", BindingFlags.Public | BindingFlags.Instance);
                             if (ntProp != null) normalizedTime = (float)ntProp.GetValue(state);
+                            var timeDProp = st.GetProperty("TimeD", BindingFlags.Public | BindingFlags.Instance);
+                            double timeD = timeDProp != null ? (double)timeDProp.GetValue(state) : 0.0;
+                            var lengthProp = st.GetProperty("Length", BindingFlags.Public | BindingFlags.Instance);
+                            float length = lengthProp != null ? (float)lengthProp.GetValue(state) : 0f;
                             var speedProp = st.GetProperty("Speed", BindingFlags.Public | BindingFlags.Instance);
                             if (speedProp != null) speed = (float)speedProp.GetValue(state);
                             var wProp = st.GetProperty("EffectiveWeight", BindingFlags.Public | BindingFlags.Instance);
                             if (wProp != null) weight = (float)wProp.GetValue(state);
+                            if (!_animatorLogged)
+                            {
+                                _animatorLogged = true;
+                                Plugin.Log.LogInfo($"[AnimSync] First container: animName={state.GetType().Name}, length={length:F2}s, timeD={timeD:F2}, nt={normalizedTime:F2}, speed={speed:F2}, weight={weight:F2}");
+                            }
                         }
                     }
                 }
