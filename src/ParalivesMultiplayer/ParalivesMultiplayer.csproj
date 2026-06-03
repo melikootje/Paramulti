@@ -55,6 +55,10 @@
       <HintPath>references/UnityEngine.JSONSerializeModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="LiteNetLib">
+      <HintPath>references/LiteNetLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>
