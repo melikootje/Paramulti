@@ -57,8 +57,14 @@
     </Reference>
     <Reference Include="LiteNetLib">
       <HintPath>references/LiteNetLib.dll</HintPath>
-      <Private>false</Private>
+      <Private>true</Private>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="references/LiteNetLib.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
