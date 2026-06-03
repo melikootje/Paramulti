@@ -170,7 +170,7 @@ namespace ParalivesMultiplayer.Input
             try
             {
                 UdpNetworkManager.Instance?.Dispose();
-                var mgr = new TcpNetworkManager();
+                var mgr = new UdpNetworkManager();
                 Session.RemoteCharacterManager.Initialize();
                 Session.PlayerSyncManager.Initialize();
                 MultiplayerSession.StartAsHost();
@@ -190,7 +190,7 @@ namespace ParalivesMultiplayer.Input
             try
             {
                 UdpNetworkManager.Instance?.Dispose();
-                var mgr = new TcpNetworkManager();
+                var mgr = new UdpNetworkManager();
                 MultiplayerSession.StartAsClient();
                 mgr.StartClient(Plugin.ConnectAddress, Plugin.ListenPort);
                 Plugin.Log?.LogInfo($"[Cmd] Connecting CLIENT to {Plugin.ConnectAddress}:{Plugin.ListenPort}");
