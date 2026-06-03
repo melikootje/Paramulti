@@ -239,14 +239,7 @@ if (GUI.Button(new Rect(x + 5f, dy, 100f, 20f), ParalivesMultiplayer.Plugin.Enab
 
             try
             {
-                // Always run F-key input detection, even if HUD isn't initialized yet
-                ParalivesMultiplayer.Input.CommandHandler.ProcessInput();
-            }
-            catch { }
-
-            try
-            {
-                MultiplayerHUD.Update();
+                Plugin.OnGameUpdate();
             }
             catch { }
         }
