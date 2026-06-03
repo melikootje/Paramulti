@@ -210,20 +210,33 @@ if (GUI.Button(new Rect(x + 5f, dy, 100f, 20f), ParalivesMultiplayer.Plugin.Enab
 
     public class HudRenderer : MonoBehaviour
     {
+        const string INPUTLOG = "BepInEx/Paramulti_Input.log";
         public static HudRenderer Instance { get; private set; }
+        static int _updateCount;
+
+        static void LogHud(string msg)
+        {
+            try { System.IO.File.AppendAllText(INPUTLOG, $"[{DateTime.Now:O}] [HudRenderer] {msg}\n"); } catch { }
+        }
 
         private void Awake()
         {
             Instance = this;
+            LogHud($"Awake on GameObject='{gameObject.name}', activeInHierarchy={gameObject.activeInHierarchy}, scene='{gameObject.scene.name}'");
         }
 
         private void OnDestroy()
         {
+            LogHud("OnDestroy called");
             if (Instance == this) Instance = null;
         }
 
         private void Update()
         {
+            int n = System.Threading.Interlocked.Increment(ref _updateCount);
+            if (n == 1 || n == 30 || n == 300 || n % 300 == 0)
+                LogHud($"Update called (count={n})");
+
             try
             {
                 // Always run F-key input detection, even if HUD isn't initialized yet
