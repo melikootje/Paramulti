@@ -244,13 +244,24 @@ namespace ParalivesMultiplayer
         static bool _gameSceneLoaded;
         static int _lastProcessedFrame = -1;
         static float _lastCharacterDataSyncTime = -999f;
+        static float _lastHeartbeatLogTime = -999f;
         const float CharacterDataSyncInterval = 3f;
+        const float HeartbeatLogInterval = 5f;
 
         public static void OnGameUpdate()
         {
             int currentFrame = UnityEngine.Time.frameCount;
             if (currentFrame == _lastProcessedFrame) return;
             _lastProcessedFrame = currentFrame;
+
+            // 5s heartbeat — proves the mod's game loop is alive even when nothing
+            // else is happening (BepInEx log buffer flushes when Mono has slack).
+            float now = UnityEngine.Time.realtimeSinceStartup;
+            if (now - _lastHeartbeatLogTime > HeartbeatLogInterval)
+            {
+                _lastHeartbeatLogTime = now;
+                Log?.LogInfo($"[Paramulti] heartbeat frame={currentFrame} t={now:F1} scene={UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}");
+            }
 
             MainThreadQueue.Drain();
             UdpNetworkManager.Instance?.PollEvents();
@@ -289,10 +300,10 @@ namespace ParalivesMultiplayer
                     CaptureAndSendLocalState();
 
                 // Periodic retry: send our character data to remote players
-                var now = UnityEngine.Time.time;
-                if (now - _lastCharacterDataSyncTime >= CharacterDataSyncInterval)
+                var now2 = UnityEngine.Time.time;
+                if (now2 - _lastCharacterDataSyncTime >= CharacterDataSyncInterval)
                 {
-                    _lastCharacterDataSyncTime = now;
+                    _lastCharacterDataSyncTime = now2;
                     TrySendLocalCharacterData();
                 }
 
