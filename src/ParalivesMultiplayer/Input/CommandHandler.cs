@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using ParalivesMultiplayer.Networking;
 using ParalivesMultiplayer.Session;
@@ -9,10 +10,17 @@ namespace ParalivesMultiplayer.Input
 {
     public static class CommandHandler
     {
+        const string INPUTLOG = "BepInEx/Paramulti_Input.log";
         static bool _initialized;
         static Type _keyboardType;
         static PropertyInfo _keyboardCurrentProp;
         static readonly Dictionary<string, PropertyInfo> _keyPropCache = new Dictionary<string, PropertyInfo>();
+
+        static void LogInput(string msg)
+        {
+            try { File.AppendAllText(INPUTLOG, $"[{DateTime.Now:O}] {msg}\n"); } catch { }
+            try { Plugin.Log?.LogInfo(msg); } catch { }
+        }
 
         public static void Initialize()
         {
@@ -31,6 +39,24 @@ namespace ParalivesMultiplayer.Input
                             _keyboardType = t;
                             _keyboardCurrentProp = t.GetProperty("current",
                                 BindingFlags.Public | BindingFlags.Static);
+                            // Enumerate ALL public instance properties of Keyboard for diagnostics
+                            try
+                            {
+                                File.WriteAllText(INPUTLOG, $"[{DateTime.Now:O}] Keyboard type found: {t.AssemblyQualifiedName}\n");
+                                File.AppendAllText(INPUTLOG, $"[{DateTime.Now:O}] Properties on Keyboard:\n");
+                                foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                                    File.AppendAllText(INPUTLOG, $"  - {p.PropertyType.Name} {p.Name}\n");
+                                File.AppendAllText(INPUTLOG, $"[{DateTime.Now:O}] current prop = {_keyboardCurrentProp?.Name ?? "null"}\n");
+                                // Try to get current
+                                try
+                                {
+                                    var kb = _keyboardCurrentProp?.GetValue(null);
+                                    File.AppendAllText(INPUTLOG, $"[{DateTime.Now:O}] current keyboard = {kb}\n");
+                                }
+                                catch (Exception ex) { File.AppendAllText(INPUTLOG, $"[{DateTime.Now:O}] current get failed: {ex.Message}\n"); }
+                            }
+                            catch (Exception ex) { File.AppendAllText(INPUTLOG, $"[{DateTime.Now:O}] Keyboard enum failed: {ex.Message}\n"); }
+
                             PreloadKeyProperty("f5Key");
                             PreloadKeyProperty("f6Key");
                             PreloadKeyProperty("f7Key");
@@ -49,6 +75,7 @@ namespace ParalivesMultiplayer.Input
 
             bool ready = _keyboardType != null && _keyboardCurrentProp != null;
             try { Plugin.Log?.LogInfo($"[Cmd] Initialized. InputSystem={ready}. F5=Host, F6=Client, F7=Disconnect, F8=ForceSendCharData, F9=SpawnTestProxy."); } catch { }
+            LogInput($"Initialize done. InputSystem ready={ready}, keyboardType={_keyboardType?.FullName ?? "null"}, cached keys: {string.Join(",", _keyPropCache.Keys)}");
         }
 
         static void PreloadKeyProperty(string propName)
@@ -68,6 +95,14 @@ namespace ParalivesMultiplayer.Input
         {
             if (!_initialized) return;
 
+            // Log that we're being called (throttled)
+            DateTime now = DateTime.Now;
+            if ((now - _lastProcessLog).TotalSeconds >= 3.0)
+            {
+                _lastProcessLog = now;
+                LogInput($"ProcessInput called; session active={MultiplayerSession.IsActive}; keyboardType={_keyboardType?.Name ?? "null"}; currentProp={_keyboardCurrentProp?.Name ?? "null"}");
+            }
+
             if (_keyboardType != null && _keyboardCurrentProp != null)
             {
                 try
@@ -77,66 +112,80 @@ namespace ParalivesMultiplayer.Input
                     {
                         if (IsKeyPressedThisFrame(keyboard, "f5Key"))
                         {
-                            try { Plugin.Log?.LogInfo("[Cmd] F5 pressed (InputSystem)"); } catch { }
+                            LogInput("[Cmd] F5 pressed (InputSystem) — calling StartHost()");
                             StartHost();
                             return;
                         }
                         if (IsKeyPressedThisFrame(keyboard, "f6Key"))
                         {
-                            try { Plugin.Log?.LogInfo("[Cmd] F6 pressed (InputSystem)"); } catch { }
+                            LogInput("[Cmd] F6 pressed (InputSystem) — calling StartClient()");
                             StartClient();
                             return;
                         }
                         if (IsKeyPressedThisFrame(keyboard, "f7Key"))
                         {
-                            try { Plugin.Log?.LogInfo("[Cmd] F7 pressed (InputSystem)"); } catch { }
+                            LogInput("[Cmd] F7 pressed (InputSystem) — calling StopHost()");
                             StopHost();
                             return;
                         }
                         if (IsKeyPressedThisFrame(keyboard, "f8Key"))
                         {
-                            try { Plugin.Log?.LogInfo("[Cmd] F8 pressed (InputSystem) — forcing character data sync"); } catch { }
+                            LogInput("[Cmd] F8 pressed (InputSystem) — calling ForceSendCharacterData()");
                             ForceSendCharacterData();
                             return;
                         }
                         if (IsKeyPressedThisFrame(keyboard, "f9Key"))
                         {
-                            try { Plugin.Log?.LogInfo("[Cmd] F9 pressed (InputSystem) — spawning test proxy"); } catch { }
+                            LogInput("[Cmd] F9 pressed (InputSystem) — calling SpawnTestProxy()");
                             SpawnTestProxy();
                             return;
                         }
                     }
+                    else
+                    {
+                        if ((now - _lastNullKbLog).TotalSeconds >= 5.0)
+                        {
+                            _lastNullKbLog = now;
+                            LogInput("Keyboard.current is null (no keyboard detected)");
+                        }
+                    }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    LogInput($"InputSystem check exception: {ex.GetType().Name}: {ex.Message}");
+                }
             }
 
             // Legacy input fallback
             if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F5))
             {
-                try { Plugin.Log?.LogInfo("[Cmd] F5 pressed (Legacy)"); } catch { }
+                LogInput("[Cmd] F5 pressed (Legacy) — calling StartHost()");
                 StartHost();
             }
             else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F6))
             {
-                try { Plugin.Log?.LogInfo("[Cmd] F6 pressed (Legacy)"); } catch { }
+                LogInput("[Cmd] F6 pressed (Legacy) — calling StartClient()");
                 StartClient();
             }
             else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F7))
             {
-                try { Plugin.Log?.LogInfo("[Cmd] F7 pressed (Legacy)"); } catch { }
+                LogInput("[Cmd] F7 pressed (Legacy) — calling StopHost()");
                 StopHost();
             }
             else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F8))
             {
-                try { Plugin.Log?.LogInfo("[Cmd] F8 pressed (Legacy) — forcing character data sync"); } catch { }
+                LogInput("[Cmd] F8 pressed (Legacy) — calling ForceSendCharacterData()");
                 ForceSendCharacterData();
             }
             else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F9))
             {
-                try { Plugin.Log?.LogInfo("[Cmd] F9 pressed (Legacy) — spawning test proxy"); } catch { }
+                LogInput("[Cmd] F9 pressed (Legacy) — calling SpawnTestProxy()");
                 SpawnTestProxy();
             }
         }
+
+        static DateTime _lastProcessLog = DateTime.MinValue;
+        static DateTime _lastNullKbLog = DateTime.MinValue;
 
         static bool IsKeyPressedThisFrame(object keyboard, string propName)
         {
