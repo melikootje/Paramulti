@@ -324,10 +324,11 @@ namespace ParalivesMultiplayer.Networking
             {
                 int length = reader.GetInt();
                 if (length <= 0 || length > 1024 * 1024) return;
-                if (reader.AvailableBytes < length) return;
-                var seg = reader.GetBytesSegment(length);
-                // Reconstruct the full frame [4:totalLength][payload] that DecodeMessage expects
-                // (reader.GetInt() consumed the 4-byte length prefix, so seg starts at codeLen)
+                // Wire format: [4:totalLength(=codeLen+bodyLen)] [1:codeLen] [codeLen:code] [bodyLen:body]
+                // totalLength excludes the 1-byte codeLen, so remaining data = 1 + totalLength bytes
+                if (reader.AvailableBytes < 1 + length) return;
+                var seg = reader.GetBytesSegment(1 + length);
+                // Reconstruct the full frame [4:totalLength][1:codeLen][code][body] for DecodeMessage
                 var data = new byte[4 + seg.Count];
                 Buffer.BlockCopy(BitConverter.GetBytes(length), 0, data, 0, 4);
                 Buffer.BlockCopy(seg.Array, seg.Offset, data, 4, seg.Count);
