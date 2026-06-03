@@ -227,6 +227,28 @@ namespace ParalivesMultiplayer
                 Log.LogInfo("[Init] Step 13: CommandHandler");
                 CommandHandler.Initialize();
 
+                // Spawn our own persistent MonoBehaviour in Awake so we have a guaranteed
+                // main-thread update tick even if BepInEx's plugin GameObject is
+                // destroyed or disabled by a scene change. HudRenderer's Update is
+                // what calls MultiplayerHUD.Update (which calls ProcessInput for
+                // F5/F6/F7/F8/F9 detection) and OnGameUpdate (the game loop). If we
+                // only create HudRenderer from inside MultiplayerHUD.Update we have
+                // a chicken-and-egg deadlock and our Update never runs.
+                try
+                {
+                    if (ParalivesMultiplayer.UI.HudRenderer.Instance == null)
+                    {
+                        var go = new UnityEngine.GameObject("Paramulti_HudRenderer");
+                        UnityEngine.Object.DontDestroyOnLoad(go);
+                        go.AddComponent<ParalivesMultiplayer.UI.HudRenderer>();
+                        Log.LogInfo("[Paramulti] Spawned persistent HudRenderer GameObject");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.LogError($"[Paramulti] Failed to spawn HudRenderer: {ex.Message}");
+                }
+
                 Log.LogInfo($"[{PluginInfo.NAME}] Initialized successfully.");
             }
             catch (Exception ex)
