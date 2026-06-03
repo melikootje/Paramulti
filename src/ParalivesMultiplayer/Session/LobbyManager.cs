@@ -73,8 +73,8 @@ namespace ParalivesMultiplayer.Session
         public static void HandleRemoteReady(MsgReadyCheck msg)
         {
             SetReady(msg.PlayerId, msg.IsReady);
-            if (MultiplayerSession.IsHost && TcpNetworkManager.Instance != null)
-                TcpNetworkManager.Instance.SendToAllExcept(msg.SenderClientId, msg);
+            if (MultiplayerSession.IsHost && UdpNetworkManager.Instance != null)
+                UdpNetworkManager.Instance.SendToAllExcept(msg.SenderClientId, msg);
         }
 
         static void CheckAllReady()

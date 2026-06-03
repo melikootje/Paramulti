@@ -329,6 +329,14 @@ namespace ParalivesMultiplayer.Networking
 
         public void OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType) { }
         public void OnNetworkLatencyUpdate(NetPeer peer, int latency) { }
+
+        public void PollEvents()
+        {
+            if (_netManager == null) return;
+            _netManager.PollEvents();
+        }
+
+        public int ClientCount => _peersById.Count;
         public void OnConnectionRequest(ConnectionRequest request)
         {
             if (_isHost)
@@ -555,9 +563,15 @@ namespace ParalivesMultiplayer.Networking
             }
         }
 
+        public UdpNetworkManager()
+        {
+            Instance = this;
+        }
+
         public void Dispose()
         {
             Stop();
+            if (Instance == this) Instance = null;
         }
 
         static void Log(string msg) => Plugin.Log.LogInfo(msg);

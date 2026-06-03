@@ -144,7 +144,7 @@ namespace ParalivesMultiplayer.Session
                 IsInTransition = false
             };
 
-            var net = TcpNetworkManager.Instance;
+            var net = UdpNetworkManager.Instance;
             if (net == null) return;
 
             if (MultiplayerSession.IsHost)

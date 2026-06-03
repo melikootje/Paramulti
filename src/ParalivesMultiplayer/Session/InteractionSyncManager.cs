@@ -33,7 +33,7 @@ namespace ParalivesMultiplayer.Session
                 IsAutonomous = isAutonomous
             };
 
-            var net = TcpNetworkManager.Instance;
+            var net = UdpNetworkManager.Instance;
             if (net == null) return;
 
             if (MultiplayerSession.IsHost)
@@ -58,7 +58,7 @@ namespace ParalivesMultiplayer.Session
             else if (MultiplayerSession.IsHost)
             {
                 // Host rebroadcasts to ensure all clients see it
-                var net = TcpNetworkManager.Instance;
+                var net = UdpNetworkManager.Instance;
                 if (net != null)
                     net.SendToAllExcept(msg.SenderClientId, msg);
             }

@@ -62,7 +62,7 @@ namespace ParalivesMultiplayer.Patches
 
             PatchLogger.Log($"Scene loading (index): {sceneBuildIndex}");
 
-            if (MultiplayerSession.IsHost && TcpNetworkManager.Instance != null)
+            if (MultiplayerSession.IsHost && UdpNetworkManager.Instance != null)
             {
                 SaveManager.InitiateLoad("");
                 var msg = new MsgSyncState
@@ -70,7 +70,7 @@ namespace ParalivesMultiplayer.Patches
                     Tick = MultiplayerSession.Tick,
                     PlayerCount = MultiplayerSession.PlayerCount
                 };
-                TcpNetworkManager.Instance.SendToAllClients(msg);
+                UdpNetworkManager.Instance.SendToAllClients(msg);
                 PatchLogger.LogDebug($"Host broadcasted SyncState after scene load (index={sceneBuildIndex})");
             }
         }
@@ -82,7 +82,7 @@ namespace ParalivesMultiplayer.Patches
 
             PatchLogger.Log($"Scene loading (name): {sceneName}");
 
-            if (MultiplayerSession.IsHost && TcpNetworkManager.Instance != null)
+            if (MultiplayerSession.IsHost && UdpNetworkManager.Instance != null)
             {
                 SaveManager.InitiateLoad(sceneName);
                 var msg = new MsgSyncState
@@ -90,7 +90,7 @@ namespace ParalivesMultiplayer.Patches
                     Tick = MultiplayerSession.Tick,
                     PlayerCount = MultiplayerSession.PlayerCount
                 };
-                TcpNetworkManager.Instance.SendToAllClients(msg);
+                UdpNetworkManager.Instance.SendToAllClients(msg);
                 PatchLogger.LogDebug($"Host broadcasted SyncState after scene load (name={sceneName})");
             }
         }
@@ -102,7 +102,7 @@ namespace ParalivesMultiplayer.Patches
 
             PatchLogger.Log($"Scene loading async (index): {sceneBuildIndex}");
 
-            if (MultiplayerSession.IsHost && TcpNetworkManager.Instance != null)
+            if (MultiplayerSession.IsHost && UdpNetworkManager.Instance != null)
             {
                 SaveManager.InitiateLoad("");
             }

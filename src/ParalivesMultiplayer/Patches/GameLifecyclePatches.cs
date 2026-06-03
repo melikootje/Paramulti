@@ -71,13 +71,13 @@ namespace ParalivesMultiplayer.Patches
 
             PatchLogger.Log("[Lifecycle] ReturnToMenu called during active session - disconnecting all players.");
 
-            if (MultiplayerSession.IsHost && TcpNetworkManager.Instance != null)
+            if (MultiplayerSession.IsHost && UdpNetworkManager.Instance != null)
             {
-                TcpNetworkManager.Instance.SendToAllClients(
+                UdpNetworkManager.Instance.SendToAllClients(
                     new Networking.Messages.MsgDisconnect { Reason = "HostReturnedToMenu" });
             }
 
-            TcpNetworkManager.Instance?.Dispose();
+            UdpNetworkManager.Instance?.Dispose();
             MultiplayerSession.End();
             PatchLogger.Log("[Lifecycle] Session ended due to menu return.");
             return true;
@@ -95,14 +95,14 @@ namespace ParalivesMultiplayer.Patches
 
             PatchLogger.Log("[Lifecycle] Host restarting level.");
 
-            if (TcpNetworkManager.Instance != null)
+            if (UdpNetworkManager.Instance != null)
             {
                 var syncMsg = new Networking.Messages.MsgSyncState
                 {
                     Tick = MultiplayerSession.Tick,
                     PlayerCount = MultiplayerSession.PlayerCount
                 };
-                TcpNetworkManager.Instance.SendToAllClients(syncMsg);
+                UdpNetworkManager.Instance.SendToAllClients(syncMsg);
                 PatchLogger.LogDebug("[Lifecycle] Host broadcasted SyncState after level restart.");
             }
 
@@ -115,13 +115,13 @@ namespace ParalivesMultiplayer.Patches
 
             PatchLogger.Log("[Lifecycle] QuitGame called during active session - cleaning up session.");
 
-            if (MultiplayerSession.IsHost && TcpNetworkManager.Instance != null)
+            if (MultiplayerSession.IsHost && UdpNetworkManager.Instance != null)
             {
-                TcpNetworkManager.Instance.SendToAllClients(
+                UdpNetworkManager.Instance.SendToAllClients(
                     new Networking.Messages.MsgDisconnect { Reason = "HostQuit" });
             }
 
-            TcpNetworkManager.Instance?.Dispose();
+            UdpNetworkManager.Instance?.Dispose();
             MultiplayerSession.End();
             return true;
         }

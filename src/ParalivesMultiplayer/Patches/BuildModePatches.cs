@@ -223,7 +223,7 @@ namespace ParalivesMultiplayer.Patches
 
             try
             {
-                var net = TcpNetworkManager.Instance;
+                var net = UdpNetworkManager.Instance;
                 if (net == null) return;
 
                 var extracted = ExtractObjectData(__Instance, __args);
@@ -389,7 +389,7 @@ namespace ParalivesMultiplayer.Patches
 
             try
             {
-                var net = TcpNetworkManager.Instance;
+                var net = UdpNetworkManager.Instance;
                 if (net == null) return;
 
                 _inBuildMode = !_inBuildMode;
@@ -499,7 +499,7 @@ namespace ParalivesMultiplayer.Patches
                     objName = go.name;
                 }
 
-                var net = TcpNetworkManager.Instance;
+                var net = UdpNetworkManager.Instance;
                 if (net != null)
                 {
                     uint seqId = (uint)System.Threading.Interlocked.Increment(ref _buildSequence);
@@ -563,7 +563,7 @@ namespace ParalivesMultiplayer.Patches
                 var rot = go.transform.rotation;
                 var scale = go.transform.localScale;
 
-                var net = TcpNetworkManager.Instance;
+                var net = UdpNetworkManager.Instance;
                 if (net != null)
                 {
                     uint seqId = (uint)System.Threading.Interlocked.Increment(ref _buildSequence);
@@ -604,7 +604,7 @@ namespace ParalivesMultiplayer.Patches
                 var extracted = ExtractObjectData(__Instance, __args);
                 uint seqId = (uint)System.Threading.Interlocked.Increment(ref _buildSequence);
 
-                var net = TcpNetworkManager.Instance;
+                var net = UdpNetworkManager.Instance;
                 if (net != null)
                 {
                     var evtMsg = new MsgBuildModeEvent

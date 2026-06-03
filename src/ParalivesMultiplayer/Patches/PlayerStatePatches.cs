@@ -103,12 +103,12 @@ namespace ParalivesMultiplayer.Patches
 
                 if (MultiplayerSession.IsHost)
                 {
-                    TcpNetworkManager.Instance?.SendToAllClients(msg);
+                    UdpNetworkManager.Instance?.SendToAllClients(msg);
                     PatchLogger.LogDebug($"[Paramulti][Local] Host captured local avatar transform. pos={pos}, rot={rot}");
                 }
-                else if (TcpNetworkManager.Instance != null)
+                else if (UdpNetworkManager.Instance != null)
                 {
-                    TcpNetworkManager.Instance.SendToHost(msg);
+                    UdpNetworkManager.Instance.SendToHost(msg);
                     PatchLogger.LogDebug($"[Paramulti][Local] Client captured local avatar transform. pos={pos}");
                 }
             }

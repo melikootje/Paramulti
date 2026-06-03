@@ -147,7 +147,7 @@ namespace ParalivesMultiplayer.Performance
 
         public static void RequestFullStateResync(int playerId)
         {
-            var net = TcpNetworkManager.Instance;
+            var net = UdpNetworkManager.Instance;
             if (net == null) return;
 
             var req = new MsgRequestFullState

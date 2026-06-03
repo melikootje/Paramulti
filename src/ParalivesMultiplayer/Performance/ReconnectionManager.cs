@@ -148,7 +148,7 @@ namespace ParalivesMultiplayer.Performance
 
         static void TryReconnect()
         {
-            var net = TcpNetworkManager.Instance;
+            var net = UdpNetworkManager.Instance;
             if (net == null)
             {
                 _isReconnecting = false;

@@ -169,7 +169,7 @@ namespace ParalivesMultiplayer.Input
 
             try
             {
-                TcpNetworkManager.Instance?.Dispose();
+                UdpNetworkManager.Instance?.Dispose();
                 var mgr = new TcpNetworkManager();
                 Session.RemoteCharacterManager.Initialize();
                 Session.PlayerSyncManager.Initialize();
@@ -189,7 +189,7 @@ namespace ParalivesMultiplayer.Input
 
             try
             {
-                TcpNetworkManager.Instance?.Dispose();
+                UdpNetworkManager.Instance?.Dispose();
                 var mgr = new TcpNetworkManager();
                 MultiplayerSession.StartAsClient();
                 mgr.StartClient(Plugin.ConnectAddress, Plugin.ListenPort);
@@ -207,7 +207,7 @@ namespace ParalivesMultiplayer.Input
 
             try
             {
-                TcpNetworkManager.Instance?.Dispose();
+                UdpNetworkManager.Instance?.Dispose();
                 Session.RemoteCharacterManager.OnSessionEnd();
                 Session.PlayerSyncManager.ClearAll();
                 MultiplayerSession.End();
@@ -223,7 +223,7 @@ namespace ParalivesMultiplayer.Input
         {
             try
             {
-                var net = TcpNetworkManager.Instance;
+                var net = UdpNetworkManager.Instance;
                 if (net == null || !MultiplayerSession.IsActive)
                 {
                     Plugin.Log?.LogWarning("[Cmd] Cannot force send: network or session not active");

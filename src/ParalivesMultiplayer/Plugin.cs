@@ -253,7 +253,7 @@ namespace ParalivesMultiplayer
             _lastProcessedFrame = currentFrame;
 
             MainThreadQueue.Drain();
-            TcpNetworkManager.Instance?.ProcessIncomingMessages();
+            UdpNetworkManager.Instance?.PollEvents();
             CommandHandler.ProcessInput();
             MultiplayerHUD.Update();
 
@@ -343,12 +343,12 @@ namespace ParalivesMultiplayer
 
                 if (MultiplayerSession.IsHost)
                 {
-                    TcpNetworkManager.Instance?.SendToAllClients(msg);
+                    UdpNetworkManager.Instance?.SendToAllClients(msg);
                     Log.LogDebug($"[Paramulti][Local] OnGameUpdate host state capture. pos={pos}");
                 }
-                else if (TcpNetworkManager.Instance != null)
+                else if (UdpNetworkManager.Instance != null)
                 {
-                    TcpNetworkManager.Instance.SendToHost(msg);
+                    UdpNetworkManager.Instance.SendToHost(msg);
                     Log.LogDebug($"[Paramulti][Local] OnGameUpdate client state capture. pos={pos}");
                 }
             }
@@ -361,7 +361,7 @@ namespace ParalivesMultiplayer
         private void OnDestroy()
         {
             try { SessionWatchdog.Dispose(); } catch {}
-            try { TcpNetworkManager.Instance?.Dispose(); } catch {}
+            try { UdpNetworkManager.Instance?.Dispose(); } catch {}
             try { Session.RemoteCharacterManager.OnSessionEnd(); } catch {}
             try { MultiplayerSession.End(); } catch {}
             try { Log?.LogInfo($"[{PluginInfo.NAME}] Shut down."); } catch {}
@@ -384,7 +384,7 @@ namespace ParalivesMultiplayer
         {
             try
             {
-                var net = TcpNetworkManager.Instance;
+                var net = UdpNetworkManager.Instance;
                 if (net == null || !MultiplayerSession.IsActive) return;
 
                 var charData = Session.RemoteCharacterManager.BuildLocalCharacterDataSync();
@@ -412,7 +412,7 @@ namespace ParalivesMultiplayer
         {
             EntitySyncManager.OnEntitySpawned += (msg) =>
             {
-                var net = TcpNetworkManager.Instance;
+                var net = UdpNetworkManager.Instance;
                 if (net == null) return;
                 if (MultiplayerSession.IsHost)
                 {
@@ -427,7 +427,7 @@ namespace ParalivesMultiplayer
 
             EntitySyncManager.OnEntityDespawned += (msg) =>
             {
-                var net = TcpNetworkManager.Instance;
+                var net = UdpNetworkManager.Instance;
                 if (net == null) return;
                 if (MultiplayerSession.IsHost)
                 {
@@ -592,7 +592,7 @@ namespace ParalivesMultiplayer
             if (now - _lastHeartbeatTime < HeartbeatInterval) return;
             _lastHeartbeatTime = now;
 
-            var net = TcpNetworkManager.Instance;
+            var net = UdpNetworkManager.Instance;
             if (net == null) return;
 
             DesyncDetector.BuildHeartbeat(out var hb);
@@ -609,7 +609,7 @@ namespace ParalivesMultiplayer
             if (now - _lastPingTime < PingInterval) return;
             _lastPingTime = now;
 
-            var net = TcpNetworkManager.Instance;
+            var net = UdpNetworkManager.Instance;
             if (net == null) return;
 
             var ping = new ParalivesMultiplayer.Networking.Messages.MsgPing

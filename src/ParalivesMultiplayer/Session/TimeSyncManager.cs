@@ -70,7 +70,7 @@ namespace ParalivesMultiplayer.Session
                     IsPausedByPlayer = _isPausedByPlayerProp != null && (bool)_isPausedByPlayerProp.GetValue(null),
                     IsPausedByUI = _isPausedByUIProp != null && (bool)_isPausedByUIProp.GetValue(null)
                 };
-                var net = Networking.TcpNetworkManager.Instance;
+                var net = Networking.UdpNetworkManager.Instance;
                 net?.SendToAllClients(msg);
                 _broadcastCount++;
                 if (_broadcastCount <= 3 || _broadcastCount % 30 == 0)

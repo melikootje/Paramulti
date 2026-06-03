@@ -58,7 +58,7 @@ namespace ParalivesMultiplayer.Session
                 TimeoutSeconds = timeoutSeconds
             };
 
-            TcpNetworkManager.Instance?.SendToAllClients(msg);
+            UdpNetworkManager.Instance?.SendToAllClients(msg);
             Plugin.Log.LogInfo($"[SaveManager] Save initiated: tick={_currentSaveTick}, scene={sceneName}");
         }
 
@@ -95,7 +95,7 @@ namespace ParalivesMultiplayer.Session
                 TotalPlayers = total
             };
 
-            TcpNetworkManager.Instance?.SendToAllClients(completeMsg);
+            UdpNetworkManager.Instance?.SendToAllClients(completeMsg);
 
             _isSaving = false;
             string detail = $"Save complete: {acks}/{total} acks";
@@ -142,7 +142,7 @@ namespace ParalivesMultiplayer.Session
                 TotalChunks = totalChunks
             };
 
-            TcpNetworkManager.Instance?.SendToAllClients(initMsg);
+            UdpNetworkManager.Instance?.SendToAllClients(initMsg);
 
             for (int i = 0; i < totalChunks; i++)
             {
@@ -154,7 +154,7 @@ namespace ParalivesMultiplayer.Session
                     TotalChunks = totalChunks,
                     Entities = snapshot.Entities.GetRange(start, count)
                 };
-                TcpNetworkManager.Instance?.SendToAllClients(chunk);
+                UdpNetworkManager.Instance?.SendToAllClients(chunk);
             }
 
             Plugin.Log.LogInfo($"[SaveManager] Load initiated: tick={MultiplayerSession.Tick}, scene={sceneName}, chunks={totalChunks}");

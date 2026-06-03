@@ -46,7 +46,7 @@ namespace ParalivesMultiplayer.UI
 
             _bgStyle.normal.background = MakeTexture(32, 32, new Color(0f, 0f, 0f, 0.55f));
 
-            var inst = ParalivesMultiplayer.Networking.TcpNetworkManager.Instance;
+            var inst = ParalivesMultiplayer.Networking.UdpNetworkManager.Instance;
             if (inst != null)
                 inst.OnStatusChanged += OnStatusChanged;
 
@@ -91,7 +91,7 @@ namespace ParalivesMultiplayer.UI
         {
             if (!_initialized) Initialize();
 
-            var net = ParalivesMultiplayer.Networking.TcpNetworkManager.Instance;
+            var net = ParalivesMultiplayer.Networking.UdpNetworkManager.Instance;
 
             if (net != null && ParalivesMultiplayer.Session.MultiplayerSession.IsActive)
             {
@@ -110,7 +110,7 @@ namespace ParalivesMultiplayer.UI
         {
             if (!_initialized) Initialize();
 
-            var net = ParalivesMultiplayer.Networking.TcpNetworkManager.Instance;
+            var net = ParalivesMultiplayer.Networking.UdpNetworkManager.Instance;
             if (net == null || !ParalivesMultiplayer.Session.MultiplayerSession.IsActive)
                 return;
 

@@ -15,7 +15,7 @@ namespace ParalivesMultiplayer.Networking
 
         public static void SendChat(string message)
         {
-            var net = TcpNetworkManager.Instance;
+            var net = UdpNetworkManager.Instance;
             if (net == null) return;
 
             var chatMsg = new MsgChat
@@ -45,9 +45,9 @@ namespace ParalivesMultiplayer.Networking
             OnChatMessageReceived?.Invoke(display);
             Plugin.Log.LogInfo($"[Chat] {display}");
 
-            if (MultiplayerSession.IsHost && TcpNetworkManager.Instance != null)
+            if (MultiplayerSession.IsHost && UdpNetworkManager.Instance != null)
             {
-                TcpNetworkManager.Instance.SendToAllExcept(msg.SenderClientId, msg);
+                UdpNetworkManager.Instance.SendToAllExcept(msg.SenderClientId, msg);
             }
         }
 

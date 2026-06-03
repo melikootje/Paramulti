@@ -50,7 +50,7 @@ namespace ParalivesMultiplayer.Patches
                 Selected = true
             };
 
-            var net = TcpNetworkManager.Instance;
+            var net = UdpNetworkManager.Instance;
             if (net == null) return;
 
             if (MultiplayerSession.IsHost)
