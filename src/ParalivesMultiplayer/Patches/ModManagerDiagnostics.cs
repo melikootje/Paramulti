@@ -95,9 +95,25 @@ namespace ParalivesMultiplayer.Patches
 
         static bool Refresh_Prefix(object[] __args)
         {
-            File.AppendAllText(DIAGFILE, $"[{DateTime.Now:O}] Refresh_Prefix called (true prefix)\n");
-            return true; // let original run
+            // Throttle logging: only log every ~2s to avoid filling the diag file with
+            // thousands of lines when the game is in a tight retry loop.
+            DateTime now = DateTime.Now;
+            if ((now - _lastLog).TotalSeconds >= 2.0)
+            {
+                _lastLog = now;
+                File.AppendAllText(DIAGFILE, $"[{now:O}] Refresh_Prefix called (true prefix) — return FALSE to break the boot-loop and free the main thread for Steam callbacks\n");
+            }
+            // SKIP the original method. The game's ModManager.RefreshCurrentlyLoadedMods
+            // throws ReflectionTypeLoadException (6ix catches it) or hangs in a tight
+            // retry loop while waiting for SteamworksService.CompletedInitialLaunchDownloads.
+            // The 6ix SteamOfflineFix postfix only sets that flag when Steam is offline;
+            // if Steam is online, Steam itself has to set it, but the main thread is
+            // stuck in this loop so Steam callbacks never run. Skipping the original
+            // method lets the main thread free up so Steam callbacks fire.
+            return false;
         }
+
+        static DateTime _lastLog = DateTime.MinValue;
 
         static string ExtractTypeName(string message)
         {
