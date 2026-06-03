@@ -164,10 +164,19 @@ namespace ParalivesMultiplayer.Session
                 if (!_remoteAnimators.TryGetValue(msg.PlayerId, out var characterAnimator))
                 {
                     var entry = RemoteCharacterManager.GetRemoteCharacterEntry(msg.PlayerId);
-                    if (entry == null || entry.ControlledTransform == null) return;
+                    if (entry == null || entry.ControlledTransform == null)
+                    {
+                        if (!_animatorLogged) Plugin.Log.LogInfo($"[AnimSync] Receive: no entry for player {msg.PlayerId}");
+                        return;
+                    }
                     characterAnimator = FindCharacterAnimator(entry.ControlledTransform);
                     if (characterAnimator != null)
                         _remoteAnimators[msg.PlayerId] = characterAnimator;
+                    else
+                    {
+                        if (!_animatorLogged) Plugin.Log.LogInfo($"[AnimSync] Receive: no CharacterAnimator on {entry.ControlledTransform.gameObject.name}");
+                        return;
+                    }
                 }
 
                 if (characterAnimator != null)
