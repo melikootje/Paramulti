@@ -95,19 +95,20 @@ namespace ParalivesMultiplayer.Patches
 
         static bool Refresh_Prefix(object[] __args)
         {
-            // Throttle logging: only log every ~2s.
-            DateTime now = DateTime.Now;
-            if ((now - _lastLog).TotalSeconds >= 2.0)
+            // Drive our game loop from this prefix because MonoBehaviour Update on
+            // our HudRenderer GameObject is not reliable on this Proton/Paralives
+            // setup (the GameObject gets destroyed ~100ms after creation during the
+            // boot scene transition, even with DontDestroyOnLoad). The game's
+            // ModManager.RefreshCurrentlyLoadedMods is called every ~2s, which is
+            // plenty of resolution to detect F-key presses.
+            try
             {
-                _lastLog = now;
-                File.AppendAllText(DIAGFILE, $"[{now:O}] Refresh_Prefix called (true prefix) — return TRUE; letting the 6ix finalizer handle any exception\n");
+                Plugin.OnGameUpdate();
             }
-            // LET THE ORIGINAL METHOD RUN. The 6ix StopReimporting finalizer catches
-            // any ReflectionTypeLoadException; the 6ix SteamOfflineFix postfix sets
-            // CompletedInitialLaunchDownloads=true on SteamworksService.Update (which
-            // needs the main thread free, which only happens if we don't busy-loop).
-            // Returning false here short-circuits whatever the game was waiting for
-            // and leaves the boot scene hanging.
+            catch (Exception ex)
+            {
+                File.AppendAllText(DIAGFILE, $"[{DateTime.Now:O}] Refresh_Prefix → OnGameUpdate threw: {ex.GetType().Name}: {ex.Message}\n");
+            }
             return true;
         }
 
